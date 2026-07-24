@@ -2,12 +2,18 @@ import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import {
   isReadOnlyMode,
-  isReadOnlyTool,
   isToolAllowed,
   assertWriteAllowed,
   ReadOnlyModeError,
 } from "../src/readonly.js";
 import { getAllDefinitions, handleTool } from "../src/tools/index.js";
+
+/**
+ * Tools exposed in read-only mode that are honestly `readOnlyHint: false` because
+ * they write the LOCAL analytics database, yet never mutate Discord. Phase 2
+ * decouples "has a side effect" (readOnlyHint) from "mutates Discord" (the gate).
+ */
+const LOCAL_ONLY_WRITERS = new Set(["discord_sync_message_history"]);
 
 /** A representative read-only tool and a representative write tool. */
 const READ_TOOL = "discord_list_guilds";
@@ -50,9 +56,14 @@ test("read-only mode exposes read/list tools", () => {
   const names = exposedNames();
   assert.ok(names.has(READ_TOOL), "list-guilds tool must be exposed");
   assert.ok(names.has("discord_read_messages"), "read-messages tool must be exposed");
-  // Every exposed tool must actually be read-only.
+  // Every exposed tool must be either a read-only tool or a known local-only
+  // analytics writer — never a Discord-mutating tool.
   for (const def of getAllDefinitions()) {
-    assert.ok(isReadOnlyTool(def.annotations), `${def.name} exposed but is not read-only`);
+    const readOnly = def.annotations?.readOnlyHint === true;
+    assert.ok(
+      readOnly || LOCAL_ONLY_WRITERS.has(def.name),
+      `${def.name} exposed in read-only mode but is neither read-only nor a known local-only writer`,
+    );
   }
 });
 

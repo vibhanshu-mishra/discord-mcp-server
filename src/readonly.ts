@@ -11,8 +11,24 @@
  * (`readOnlyHint` / `destructiveHint` in {@link ToolAnnotations}) rather than
  * guessing from names, so there is one authoritative place that decides which
  * tools may run while read-only mode is enabled.
+ *
+ * Two *different* questions are answered here, and Phase 2 makes the distinction
+ * explicit:
+ *   1. `readOnlyHint` — the standard MCP hint: does the tool have ANY side effect
+ *      (including writing to the local analytics database)? Advertised to clients.
+ *   2. {@link mutatesDiscord} — the internal gate this module actually enforces:
+ *      does the tool change DISCORD itself (send/edit/delete/ban/react/…)? This,
+ *      and only this, is what read-only mode blocks.
+ *
+ * An analytics tool such as `discord_sync_message_history` is honestly
+ * `readOnlyHint: false` (it writes local rows) yet `discordWrite: false` (it never
+ * mutates Discord), so it stays usable under `DISCORD_READ_ONLY=true` while every
+ * real Discord-write tool remains hidden and blocked.
  */
 import type { ToolAnnotations, ToolDefinition } from "./tools/types.js";
+
+/** The subset of a tool definition this module needs to classify it. */
+type Classifiable = Pick<ToolDefinition, "annotations" | "discordWrite">;
 
 /** Values (case-insensitive) that turn read-only mode OFF. Anything else stays ON. */
 const OFF_PATTERN = /^(false|0|no|off)$/i;
@@ -46,11 +62,27 @@ export function isDestructiveTool(annotations: ToolAnnotations | undefined): boo
 }
 
 /**
- * Should this tool be exposed and allowed right now? A read-only tool is always
- * allowed; a write-capable tool is allowed only when read-only mode is off.
+ * THE central source of truth for read-only mode: does this tool mutate Discord?
+ *
+ * Explicit classification wins — a tool that sets `discordWrite` says so directly
+ * (analytics tools set `false` because they only touch the local database). When
+ * `discordWrite` is unset (every existing Phase 1 tool), it falls back to the MCP
+ * hint: a tool that only reads Discord (`readOnlyHint === true`) does not mutate
+ * it. This fallback is fail-closed — a tool that declares neither is treated as a
+ * Discord write and therefore blocked, never silently exposed.
  */
-export function isToolAllowed(def: Pick<ToolDefinition, "annotations">): boolean {
-  return isReadOnlyTool(def.annotations) || !isReadOnlyMode();
+export function mutatesDiscord(def: Classifiable): boolean {
+  if (def.discordWrite !== undefined) return def.discordWrite;
+  return def.annotations?.readOnlyHint !== true;
+}
+
+/**
+ * Should this tool be exposed and allowed right now? A tool that never mutates
+ * Discord (read-only Discord tools AND local-only analytics writers) is always
+ * allowed; a Discord-mutating tool is allowed only when read-only mode is off.
+ */
+export function isToolAllowed(def: Classifiable): boolean {
+  return !mutatesDiscord(def) || !isReadOnlyMode();
 }
 
 /**

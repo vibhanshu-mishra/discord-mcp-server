@@ -9,7 +9,7 @@
  */
 
 import type { ToolModule, ToolDefinition, ToolHandler, ToolResult } from "./types.js";
-import { isReadOnlyMode, isReadOnlyTool, isToolAllowed, ReadOnlyModeError } from "../readonly.js";
+import { isReadOnlyMode, isToolAllowed, mutatesDiscord, ReadOnlyModeError } from "../readonly.js";
 
 import discovery from "./discovery.js";
 import messages from "./messages.js";
@@ -25,6 +25,7 @@ import webhooks from "./webhooks.js";
 import scheduledEvents from "./scheduledEvents.js";
 import invites from "./invites.js";
 import dm from "./dm.js";
+import analytics from "./analytics.js";
 
 /** Every toolset, keyed by the name used in the `DISCORD_MCP_TOOLSETS` env var. */
 const allToolsets: Record<string, ToolModule> = {
@@ -42,6 +43,7 @@ const allToolsets: Record<string, ToolModule> = {
   scheduled_events: scheduledEvents,
   invites,
   dm,
+  analytics,
 };
 
 /**
@@ -98,14 +100,25 @@ const definitionsByName: Map<string, ToolDefinition> = (() => {
   return map;
 })();
 
+/** Strips internal-only fields (`discordWrite`) so they never reach the client. */
+function toWireDefinition(def: ToolDefinition): ToolDefinition {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { discordWrite: _discordWrite, ...wire } = def;
+  return wire;
+}
+
 /**
  * Returns the tool definitions to advertise on the current tools/list request.
- * While read-only mode is enabled every write-capable tool is hidden — it stays
- * in the source code and registry, it is simply not offered to the client.
+ * While read-only mode is enabled every Discord-mutating tool is hidden — it
+ * stays in the source code and registry, it is simply not offered to the client.
+ * Local-only analytics writers stay visible because they do not mutate Discord.
  * Read fresh each call so a config change is reflected without a restart.
  */
 export function getAllDefinitions(): ToolDefinition[] {
-  return modules.flatMap((m) => m.definitions).filter((def) => isToolAllowed(def));
+  return modules
+    .flatMap((m) => m.definitions)
+    .filter((def) => isToolAllowed(def))
+    .map(toWireDefinition);
 }
 
 /** True if a tool with this name is registered (regardless of read-only mode). */
@@ -115,15 +128,17 @@ export function hasTool(name: string): boolean {
 
 /**
  * Routes a tool call to its handler via the merged registry. Read-only mode is
- * enforced here as a second layer of protection: even if a write tool were
- * advertised or invoked by name, it is blocked before it can touch Discord.
+ * enforced here as a second layer of protection: even if a Discord-write tool
+ * were advertised or invoked by name, it is blocked before it can touch Discord.
+ * Local-only analytics writers are not Discord writes, so they are allowed.
  * @throws {Error} If no tool owns the given name.
- * @throws {ReadOnlyModeError} If the tool is write-capable and read-only mode is on.
+ * @throws {ReadOnlyModeError} If the tool mutates Discord and read-only mode is on.
  */
 export async function handleTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
   const handler = registry.get(name);
   if (!handler) throw new Error(`Unknown tool: ${name}`);
-  if (isReadOnlyMode() && !isReadOnlyTool(definitionsByName.get(name)?.annotations)) {
+  const def = definitionsByName.get(name);
+  if (isReadOnlyMode() && def && mutatesDiscord(def)) {
     throw new ReadOnlyModeError(name);
   }
   return handler(args);

@@ -17,6 +17,14 @@ export interface ToolAnnotations {
  * Schema definition for a single MCP tool: its name, purpose, and expected input.
  * `outputSchema` is the JSON Schema (object root) of the tool's `structuredContent`,
  * present only on tools that return structured output.
+ *
+ * `discordWrite` is an INTERNAL classification (never sent to MCP clients): does
+ * this tool mutate Discord itself? It is the gate read-only mode enforces. Leave
+ * it unset for tools whose Discord-write status matches their MCP `readOnlyHint`
+ * (every Phase 1 tool); set it explicitly to decouple the two — e.g. an analytics
+ * tool that writes only the local database is `readOnlyHint: false` (it has a side
+ * effect) but `discordWrite: false` (it never touches Discord). See
+ * `mutatesDiscord` in `../readonly.ts`.
  */
 export interface ToolDefinition {
   name: string;
@@ -24,6 +32,7 @@ export interface ToolDefinition {
   inputSchema: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
   annotations?: ToolAnnotations;
+  discordWrite?: boolean;
 }
 
 /**

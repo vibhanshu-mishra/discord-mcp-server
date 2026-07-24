@@ -220,6 +220,72 @@ Accepted "off" values (case-insensitive): `false`, `0`, `no`, `off`. Any other v
 
 ---
 
+## Local Discord Analytics
+
+The analytics subsystem builds a **private, local** database of your server's activity so you can run engagement reports later. It is **read-only toward Discord** — it never sends, edits, deletes, reacts to, pins, acknowledges, or otherwise changes anything on Discord. It only reads, and it writes solely to a local SQLite file on your own machine. Because it never mutates Discord, it works even while `DISCORD_READ_ONLY=true`.
+
+### Disabled by default
+
+Analytics is **off unless you turn it on**. Set `DISCORD_ANALYTICS_ENABLED=true` and list the guilds it may collect from. A guild is only collected when it appears in **both** `DISCORD_ANALYTICS_GUILD_IDS` **and** `DISCORD_ALLOWED_GUILDS` — one without the other is rejected.
+
+### Enabling it
+
+```env
+DISCORD_ANALYTICS_ENABLED=true
+DISCORD_ANALYTICS_GUILD_IDS=123456789012345678
+DISCORD_ALLOWED_GUILDS=123456789012345678
+```
+
+The analytics MCP tools live in the `analytics` toolset. If you use `DISCORD_MCP_TOOLSETS` to trim the tool list, include `analytics`:
+
+```env
+DISCORD_MCP_TOOLSETS=discovery,messages,analytics
+```
+
+The tools it adds: `discord_analytics_status`, `discord_sync_message_history`, `discord_get_sync_runs`, `discord_get_stored_message_counts`, and `discord_get_voice_sessions`.
+
+### Where the data lives
+
+The database is created at `data/discord-analytics.sqlite` by default (configurable with `DISCORD_ANALYTICS_DB_PATH`). The `data/` folder and all `*.sqlite`/`*.db` files are **git-ignored**, so the database is never committed.
+
+### What is collected
+
+- Messages from server channels the bot can read (including threads and forum posts)
+- Message metadata (author, timestamps, reply/pin flags, edited/deleted status)
+- Attachment **metadata only** (filename, type, size, URLs) — files are never downloaded
+- Reactions available through the API
+- Members seen in those channels (ID, username, display name, bot flag) — no unnecessary profile data
+- Voice-channel join/leave sessions observed **while the bot is online**
+- Optionally, DMs sent **directly to the bot** (only when `DISCORD_ANALYTICS_COLLECT_BOT_DMS=true`)
+
+### What is NOT collected
+
+- Nothing is sent, edited, deleted, acknowledged, or reacted to on Discord — ever.
+- **Private conversations between two normal Discord user accounts are never accessed.** The bot is not a user; it cannot see DMs it is not part of. "Bot DMs" means messages a user chooses to send to the bot itself.
+- Historical voice attendance **cannot be reconstructed.** Voice tracking only begins while the bot is online; there is no way to recover who attended before that.
+
+### Server messages vs. personal DMs
+
+"Server messages" are posts in channels the bot has been added to and given permission to read. "Personal user-to-user DMs" are private conversations between two people — the bot has no access to those and this project makes no attempt to obtain it.
+
+### Privacy of stored content
+
+With `DISCORD_ANALYTICS_STORE_MESSAGE_CONTENT=true` (the default, needed for later topic and unanswered-question analysis), **readable message text from your community is stored on your local machine.** Treat the database as sensitive. When set to `false`, only metadata and a one-way hash are stored — counts and voice metrics still work, but message text is neither stored nor returned. **The database must never be committed to Git.**
+
+### First historical sync
+
+Once analytics is enabled, run the sync tool through your MCP client (it reads Discord history and writes only to the local DB):
+
+- Call `discord_sync_message_history` with a `guild_id` (and optionally `start_date`, `channel_ids`, `max_messages_per_channel`, or `dry_run: true` to estimate first).
+- Inspect results with `discord_get_sync_runs`, and current totals with `discord_analytics_status`.
+
+### Backing up and deleting the database
+
+- **Back up:** while the MCP is stopped, copy the file, e.g. `cp data/discord-analytics.sqlite backups/analytics-backup.sqlite`.
+- **Delete:** while the MCP is stopped, remove the file and its journal, e.g. `rm data/discord-analytics.sqlite data/discord-analytics.sqlite-*`. A fresh empty database is created on the next start. (There is intentionally **no** MCP tool that deletes analytics data.)
+
+---
+
 ## Creating Your Discord Bot
 
 1. Go to [discord.com/developers/applications](https://discord.com/developers/applications)

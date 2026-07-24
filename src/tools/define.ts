@@ -72,6 +72,7 @@ interface RegisteredTool {
   name: string;
   description: string;
   annotations?: ToolAnnotations;
+  discordWrite?: boolean;
   inputSchema: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
   run(args: Record<string, unknown>): Promise<ToolResult>;
@@ -102,6 +103,13 @@ export function defineTool<S extends z.ZodType>(tool: {
   name: string;
   description: string;
   annotations?: ToolAnnotations;
+  /**
+   * Internal Discord-write classification (never advertised to clients). Set it
+   * to decouple "mutates Discord" from the MCP `readOnlyHint` — e.g. an analytics
+   * tool that writes only the local database is `discordWrite: false`. Omit it to
+   * inherit the Phase 1 default (`!readOnlyHint`). See `mutatesDiscord`.
+   */
+  discordWrite?: boolean;
   schema: S;
   outputSchema?: z.ZodType;
   handle(args: z.infer<S>): Promise<ToolResult>;
@@ -112,6 +120,7 @@ export function defineTool<S extends z.ZodType>(tool: {
     name: tool.name,
     description: tool.description,
     annotations: tool.annotations,
+    discordWrite: tool.discordWrite,
     inputSchema: toInputSchema(schema),
     outputSchema: outputSchema ? toOutputSchema(outputSchema) : undefined,
     run: async (args) => {
@@ -153,6 +162,7 @@ export function defineModule(tools: RegisteredTool[]): ToolModule {
     name: t.name,
     description: t.description,
     annotations: t.annotations,
+    ...(t.discordWrite !== undefined ? { discordWrite: t.discordWrite } : {}),
     inputSchema: t.inputSchema,
     ...(t.outputSchema ? { outputSchema: t.outputSchema } : {}),
   }));

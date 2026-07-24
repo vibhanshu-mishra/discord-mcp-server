@@ -8,11 +8,15 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { discord } from "./client.js";
 import { createServer } from "./server.js";
+import { initAnalytics, shutdownAnalytics } from "./analytics/runtime.js";
 
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
 const version: string = pkg.version;
 
 async function main() {
+  // Initialise analytics before serving. This never throws: if analytics is
+  // disabled or misconfigured, the MCP still starts with all reading tools.
+  initAnalytics(discord);
   const transport = new StdioServerTransport();
   await createServer(version).connect(transport);
   console.error(`Discord MCP Server v${version} running on stdio.`);
@@ -20,6 +24,7 @@ async function main() {
 
 function shutdown() {
   console.error("Shutting down Discord MCP Server...");
+  shutdownAnalytics();
   discord.destroy();
   process.exit(0);
 }
