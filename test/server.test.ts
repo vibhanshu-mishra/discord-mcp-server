@@ -32,7 +32,7 @@ test("tools/list serves every definition and rejects unexpected cursors", async 
   try {
     const client = await connectedClient();
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 102, "update this pin when adding/removing tools");
+    assert.equal(tools.length, 110, "update this pin when adding/removing tools");
     await assert.rejects(
       () => client.listTools({ cursor: "bogus" }),
       (err: unknown) => err instanceof McpError && err.code === ErrorCode.InvalidParams,

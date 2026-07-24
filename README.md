@@ -286,6 +286,64 @@ Once analytics is enabled, run the sync tool through your MCP client (it reads D
 
 ---
 
+## Community Metrics and Reporting
+
+Once analytics has collected data, eight **read-only** reporting tools turn the local database into community metrics. **They all read only the local SQLite database — none of them ever send, edit, delete, react to, acknowledge, or otherwise modify anything on Discord**, and they work while `DISCORD_READ_ONLY=true`. Message content is never returned by the aggregate tools; the two "open item" tools can return short opt-in excerpts (≤240 characters).
+
+### Configuration
+
+Set these in your `.env` (all optional except where a tool requires them; see `.env.example` for the full list):
+
+| Variable                                         | Purpose                                                                     |
+| ------------------------------------------------ | --------------------------------------------------------------------------- |
+| `DISCORD_ANALYTICS_PRIMARY_USER_ID`              | **Optional.** A primary user (community owner/admin) for the weekly report. |
+| `DISCORD_ANALYTICS_STAFF_USER_IDS`               | Comma-separated staff IDs. The primary user is auto-added when set.         |
+| `DISCORD_ANALYTICS_RESOURCE_CHANNEL_IDS`         | Channels where trainings/resources are expected (cadence).                  |
+| `DISCORD_ANALYTICS_OFFICE_HOUR_CHANNEL_IDS`      | Voice channels used for office hours (attendance).                          |
+| `DISCORD_ANALYTICS_RESPONSE_WINDOW_HOURS`        | Hours before an unanswered question counts as open (default 24).            |
+| `DISCORD_ANALYTICS_ACKNOWLEDGEMENT_WINDOW_HOURS` | Hours before a message counts as unacknowledged (default 24).               |
+| `DISCORD_ANALYTICS_TIMEZONE`                     | IANA time zone for daily/weekly grouping (default UTC).                     |
+| `DISCORD_ANALYTICS_WEEK_START`                   | `MONDAY` or `SUNDAY` (default MONDAY).                                      |
+| `DISCORD_ANALYTICS_TRAINING_KEYWORDS`            | Words that help flag training posts.                                        |
+
+### The eight reporting tools
+
+- `discord_get_member_engagement` — per-member raw counts (messages, active days, replies sent/received, reactions received, candidate questions).
+- `discord_get_user_activity` — a supplied user's posting cadence, who they reply to, and first-response speed (works for any `user_id`).
+- `discord_get_staff_response_metrics` — response rate, within-window rate, and average/median/p90 first-response time.
+- `discord_get_unanswered_questions` — candidate questions with no staff response, oldest first.
+- `discord_get_unacknowledged_messages` — candidate member messages with no staff reply/reaction/thread response.
+- `discord_get_training_cadence` — which resource-channel-weeks contain a probable training post, and which are missing.
+- `discord_get_office_hour_metrics` — office-hour voice attendance (unique/first-time/repeat, durations, incomplete sessions).
+- `discord_generate_weekly_metrics` — one structured weekly report combining all of the above, with previous-week comparisons.
+
+### Example tool requests
+
+- Member engagement for a week:
+  `discord_get_member_engagement` with `{ "guild_id": "<id>", "start_date": "2024-06-03", "end_date": "2024-06-09", "sort_by": "messages" }`
+- The most recent completed week's full report:
+  `discord_generate_weekly_metrics` with `{ "guild_id": "<id>" }`
+- Open questions older than the response window:
+  `discord_get_unanswered_questions` with `{ "guild_id": "<id>" }`
+- Activity for any single user:
+  `discord_get_user_activity` with `{ "guild_id": "<id>", "user_id": "<id>", "start_date": "2024-06-03", "end_date": "2024-06-09" }`
+
+### The optional primary user
+
+`DISCORD_ANALYTICS_PRIMARY_USER_ID` is **optional**. It may identify the community owner, lead administrator, or any other user whose activity should appear as a dedicated section in `discord_generate_weekly_metrics`. When set, the ID is validated as a snowflake and added to the effective staff set; when unset, the weekly report simply marks that section as not configured (never fabricating a user). It is **not** required by `discord_get_user_activity`, which reports on any `user_id` you pass it. Do not put real Discord IDs in this public repository — configure them only in your local `.env`.
+
+### Methodology and honesty
+
+- **Candidate questions** are detected by a transparent heuristic: a member (non-bot, non-staff) message containing `?` or a common question phrase (e.g. "how do", "can someone"). It requires stored content. These are **candidates for human review**, not guaranteed questions.
+- **Candidate unacknowledged messages** are member messages with no staff reply, staff reaction, or staff thread response within the acknowledgement window. Also **heuristic candidates** — a message can be acknowledged without its question being fully answered.
+- **A staff response** is a direct reply, a staff post in a thread started from the question, or a staff post in the same thread — never merely a later message in a shared channel.
+- **Training posts** qualify when posted by a configured staff author with an attachment, an http(s) link, or a training keyword. With content storage off, only attachment-based detection works.
+- **Office-hour attendance** is only ever counted from sessions observed while the bot was online. **Historical attendance cannot be reconstructed**, and first-time-attendee status reports whether earlier history is available so nobody is falsely labelled a first-timer.
+- **"New member"** in the weekly report means a member whose **first stored message** falls in that week — **not** necessarily when they joined the Discord server (join dates are not stored).
+- All time grouping uses the configured time zone; weekly boundaries are half-open in UTC so midnight is never double-counted. Percentages expose numerator and denominator and return `null` when the denominator is zero; comparisons return `null` percentage change (never infinity) when the previous value is zero.
+
+---
+
 ## Creating Your Discord Bot
 
 1. Go to [discord.com/developers/applications](https://discord.com/developers/applications)

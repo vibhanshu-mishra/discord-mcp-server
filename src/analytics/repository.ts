@@ -85,6 +85,15 @@ export class AnalyticsRepository {
     public readonly storeContent: boolean,
   ) {}
 
+  /**
+   * Read-only handle for the Phase 3 reporting layer, which runs its own
+   * parameterised SELECT queries. Reporting never writes through this handle;
+   * the reporting store issues only SELECTs.
+   */
+  get connection(): DatabaseSync {
+    return this.db;
+  }
+
   /** Runs `fn` inside a single transaction, rolling back on any error. */
   transaction<T>(fn: () => T): T {
     this.db.exec("BEGIN");

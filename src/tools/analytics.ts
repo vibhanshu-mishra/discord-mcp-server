@@ -23,6 +23,53 @@ import type {
   VoiceSessionFilter,
 } from "../analytics/repository.js";
 import type { SyncRunStatus } from "../analytics/types.js";
+import { ReportingStore } from "../analytics/reporting/store.js";
+import { getReportingConfig } from "../analytics/reporting/config.js";
+import type { ReportContext } from "../analytics/reporting/types.js";
+import { buildMemberEngagement } from "../analytics/reporting/memberEngagement.js";
+import { buildUserActivity } from "../analytics/reporting/userActivity.js";
+import { buildStaffResponseMetrics } from "../analytics/reporting/responseMetrics.js";
+import {
+  buildUnansweredQuestions,
+  buildUnacknowledgedMessages,
+} from "../analytics/reporting/openItems.js";
+import { buildTrainingCadence } from "../analytics/reporting/trainingCadence.js";
+import { buildOfficeHourMetrics } from "../analytics/reporting/officeHours.js";
+import { buildWeeklyMetrics } from "../analytics/reporting/weeklyMetrics.js";
+
+/**
+ * Builds a read-only reporting context for a guild, or returns a clear error when
+ * analytics is off, the database is unavailable, or the guild is not authorised.
+ * All Phase 3 reporting tools funnel through this so the guardrails are uniform.
+ */
+function reportContext(guildId: string): { ctx: ReportContext } | { error: ToolResult } {
+  const rt = getAnalyticsRuntime();
+  if (!rt.enabled) {
+    return {
+      error: analyticsDisabledError("set DISCORD_ANALYTICS_ENABLED=true to use reporting."),
+    };
+  }
+  if (!rt.repo) {
+    return {
+      error: analyticsDisabledError(
+        "the analytics database is not available; check DISCORD_ANALYTICS_DB_PATH.",
+      ),
+    };
+  }
+  if (!isAnalyticsGuildAuthorised(guildId, rt.config)) {
+    return {
+      error: analyticsDisabledError(
+        `guild ${guildId} must be listed in BOTH DISCORD_ANALYTICS_GUILD_IDS and DISCORD_ALLOWED_GUILDS.`,
+      ),
+    };
+  }
+  const store = new ReportingStore(rt.repo.connection, rt.repo.storeContent);
+  return { ctx: { store, reporting: getReportingConfig() } };
+}
+
+/** Optional array-of-snowflakes input, reused by several reporting tools. */
+const idArray = z.array(snowflake);
+const windowHours = intIn(1, 24 * 365);
 
 const isoDate = z
   .string()
@@ -282,6 +329,289 @@ const tools = [
         isOpen: s.is_open === 1,
       }));
       return structured({ sessions, analyticsEnabled: rt.enabled });
+    },
+  }),
+
+  // ─── Phase 3: community metrics & reporting (read-only, local DB only) ──────
+
+  defineTool({
+    name: "discord_get_member_engagement",
+    description:
+      "Per-member community engagement over a date range: messages, active days, distinct channels, direct replies sent/received, unique reply partners, reactions received, and candidate questions. Reads only the local database; raw auditable counts (no engagement score).",
+    annotations: { title: "Member engagement", readOnlyHint: true, openWorldHint: false },
+    discordWrite: false,
+    schema: z.object({
+      guild_id: guildIdField,
+      start_date: isoDate,
+      end_date: isoDate,
+      channel_ids: idArray.optional(),
+      member_ids: idArray.optional(),
+      include_bots: z.boolean().default(false),
+      include_staff: z.boolean().default(true),
+      limit: intIn(1, 1000).optional(),
+      sort_by: z
+        .enum([
+          "messages",
+          "active_days",
+          "replies_sent",
+          "replies_received",
+          "reactions_received",
+          "questions_asked",
+          "last_activity",
+        ])
+        .optional(),
+    }),
+    handle: async (a) => {
+      const rc = reportContext(a.guild_id);
+      if ("error" in rc) return rc.error;
+      return structured(
+        buildMemberEngagement(rc.ctx, {
+          guildId: a.guild_id,
+          startDate: a.start_date,
+          endDate: a.end_date,
+          channelIds: a.channel_ids,
+          memberIds: a.member_ids,
+          includeBots: a.include_bots,
+          includeStaff: a.include_staff,
+          limit: a.limit,
+          sortBy: a.sort_by,
+        }),
+      );
+    },
+  }),
+
+  defineTool({
+    name: "discord_get_user_activity",
+    description:
+      "A single user's posting cadence and reply activity over a date range, with optional daily and channel breakdowns and median first-response time. Works for any user in the authorised guild via the required user_id input. Local database only; no message content returned.",
+    annotations: { title: "User activity", readOnlyHint: true, openWorldHint: false },
+    discordWrite: false,
+    schema: z.object({
+      guild_id: guildIdField,
+      user_id: snowflake.describe("The Discord user ID to report on."),
+      start_date: isoDate,
+      end_date: isoDate,
+      channel_ids: idArray.optional(),
+      include_daily_breakdown: z.boolean().default(true),
+      include_channel_breakdown: z.boolean().default(true),
+    }),
+    handle: async (a) => {
+      const rc = reportContext(a.guild_id);
+      if ("error" in rc) return rc.error;
+      return structured(
+        buildUserActivity(rc.ctx, {
+          guildId: a.guild_id,
+          userId: a.user_id,
+          startDate: a.start_date,
+          endDate: a.end_date,
+          channelIds: a.channel_ids,
+          includeDailyBreakdown: a.include_daily_breakdown,
+          includeChannelBreakdown: a.include_channel_breakdown,
+        }),
+      );
+    },
+  }),
+
+  defineTool({
+    name: "discord_get_staff_response_metrics",
+    description:
+      "Staff responsiveness to candidate member questions over a date range: response rate, within-window rate, average/median/p90 first-response time, and per-staff/per-channel breakdowns. Rates return null when no eligible questions exist. Local database only.",
+    annotations: { title: "Staff response metrics", readOnlyHint: true, openWorldHint: false },
+    discordWrite: false,
+    schema: z.object({
+      guild_id: guildIdField,
+      start_date: isoDate,
+      end_date: isoDate,
+      channel_ids: idArray.optional(),
+      staff_user_ids: idArray.optional(),
+      response_window_hours: windowHours.optional(),
+      include_per_staff_breakdown: z.boolean().default(true),
+      include_channel_breakdown: z.boolean().default(true),
+    }),
+    handle: async (a) => {
+      const rc = reportContext(a.guild_id);
+      if ("error" in rc) return rc.error;
+      return structured(
+        buildStaffResponseMetrics(rc.ctx, {
+          guildId: a.guild_id,
+          startDate: a.start_date,
+          endDate: a.end_date,
+          channelIds: a.channel_ids,
+          staffUserIds: a.staff_user_ids,
+          responseWindowHours: a.response_window_hours,
+          includePerStaffBreakdown: a.include_per_staff_breakdown,
+          includeChannelBreakdown: a.include_channel_breakdown,
+        }),
+      );
+    },
+  }),
+
+  defineTool({
+    name: "discord_get_unanswered_questions",
+    description:
+      "Candidate member questions with no staff response, older than the response window (heuristic — requires human review). Reads only the local database. Excerpts are opt-in and capped at 240 characters; sorted oldest first.",
+    annotations: { title: "Unanswered questions", readOnlyHint: true, openWorldHint: false },
+    discordWrite: false,
+    schema: z.object({
+      guild_id: guildIdField,
+      start_date: isoDate.optional(),
+      end_date: isoDate.optional(),
+      channel_ids: idArray.optional(),
+      member_ids: idArray.optional(),
+      minimum_age_hours: windowHours.optional(),
+      response_window_hours: windowHours.optional(),
+      limit: intIn(1, 1000).optional(),
+      include_excerpt: z.boolean().default(false),
+    }),
+    handle: async (a) => {
+      const rc = reportContext(a.guild_id);
+      if ("error" in rc) return rc.error;
+      return structured(
+        buildUnansweredQuestions(rc.ctx, {
+          guildId: a.guild_id,
+          startDate: a.start_date,
+          endDate: a.end_date,
+          channelIds: a.channel_ids,
+          memberIds: a.member_ids,
+          minimumAgeHours: a.minimum_age_hours,
+          responseWindowHours: a.response_window_hours,
+          limit: a.limit,
+          includeExcerpt: a.include_excerpt,
+        }),
+      );
+    },
+  }),
+
+  defineTool({
+    name: "discord_get_unacknowledged_messages",
+    description:
+      "Candidate member messages with no staff reply, reaction, or thread response within the acknowledgement window (heuristic — requires human review). Filter by questions/attachments/all. Local database only; excerpts opt-in, capped at 240 characters.",
+    annotations: { title: "Unacknowledged messages", readOnlyHint: true, openWorldHint: false },
+    discordWrite: false,
+    schema: z.object({
+      guild_id: guildIdField,
+      start_date: isoDate.optional(),
+      end_date: isoDate.optional(),
+      channel_ids: idArray.optional(),
+      member_ids: idArray.optional(),
+      minimum_age_hours: windowHours.optional(),
+      acknowledgement_window_hours: windowHours.optional(),
+      message_filter: z.enum(["questions", "attachments", "all"]).default("all"),
+      limit: intIn(1, 1000).optional(),
+      include_excerpt: z.boolean().default(false),
+    }),
+    handle: async (a) => {
+      const rc = reportContext(a.guild_id);
+      if ("error" in rc) return rc.error;
+      return structured(
+        buildUnacknowledgedMessages(rc.ctx, {
+          guildId: a.guild_id,
+          startDate: a.start_date,
+          endDate: a.end_date,
+          channelIds: a.channel_ids,
+          memberIds: a.member_ids,
+          minimumAgeHours: a.minimum_age_hours,
+          acknowledgementWindowHours: a.acknowledgement_window_hours,
+          messageFilter: a.message_filter,
+          limit: a.limit,
+          includeExcerpt: a.include_excerpt,
+        }),
+      );
+    },
+  }),
+
+  defineTool({
+    name: "discord_get_training_cadence",
+    description:
+      "Weekly training/resource posting cadence per resource channel: which channel-weeks contain a probable training post (attachment, link, or keyword by a configured staff author) and which are missing. Local database only; no training content returned.",
+    annotations: { title: "Training cadence", readOnlyHint: true, openWorldHint: false },
+    discordWrite: false,
+    schema: z.object({
+      guild_id: guildIdField,
+      start_date: isoDate,
+      end_date: isoDate,
+      resource_channel_ids: idArray.optional(),
+      staff_user_ids: idArray.optional(),
+      include_post_evidence: z.boolean().default(true),
+    }),
+    handle: async (a) => {
+      const rc = reportContext(a.guild_id);
+      if ("error" in rc) return rc.error;
+      return structured(
+        buildTrainingCadence(rc.ctx, {
+          guildId: a.guild_id,
+          startDate: a.start_date,
+          endDate: a.end_date,
+          resourceChannelIds: a.resource_channel_ids,
+          staffUserIds: a.staff_user_ids,
+          includePostEvidence: a.include_post_evidence,
+        }),
+      );
+    },
+  }),
+
+  defineTool({
+    name: "discord_get_office_hour_metrics",
+    description:
+      "Office-hour voice attendance over a date range: unique/first-time/repeat attendees, total and median durations, incomplete sessions, and day/channel/member breakdowns. First-time status reports history availability. Local database only.",
+    annotations: { title: "Office-hour metrics", readOnlyHint: true, openWorldHint: false },
+    discordWrite: false,
+    schema: z.object({
+      guild_id: guildIdField,
+      start_date: isoDate,
+      end_date: isoDate,
+      voice_channel_ids: idArray.optional(),
+      exclude_staff: z.boolean().default(true),
+      include_incomplete_sessions: z.boolean().default(true),
+      include_member_breakdown: z.boolean().default(true),
+      include_daily_breakdown: z.boolean().default(true),
+    }),
+    handle: async (a) => {
+      const rc = reportContext(a.guild_id);
+      if ("error" in rc) return rc.error;
+      return structured(
+        buildOfficeHourMetrics(rc.ctx, {
+          guildId: a.guild_id,
+          startDate: a.start_date,
+          endDate: a.end_date,
+          voiceChannelIds: a.voice_channel_ids,
+          excludeStaff: a.exclude_staff,
+          includeIncompleteSessions: a.include_incomplete_sessions,
+          includeMemberBreakdown: a.include_member_breakdown,
+          includeDailyBreakdown: a.include_daily_breakdown,
+        }),
+      );
+    },
+  }),
+
+  defineTool({
+    name: "discord_generate_weekly_metrics",
+    description:
+      "One deterministic weekly report combining community activity, optional primary-user activity, response health, acknowledgement health, training cadence, and office hours, with previous-week comparisons and data-quality warnings. Defaults to the most recently completed week. Local database only; structured JSON, no prose or judgement.",
+    annotations: { title: "Weekly metrics", readOnlyHint: true, openWorldHint: false },
+    discordWrite: false,
+    schema: z.object({
+      guild_id: guildIdField,
+      week_start_date: isoDate.optional(),
+      compare_previous_week: z.boolean().default(true),
+      resource_channel_ids: idArray.optional(),
+      office_hour_channel_ids: idArray.optional(),
+      exclude_staff_from_member_metrics: z.boolean().default(true),
+    }),
+    handle: async (a) => {
+      const rc = reportContext(a.guild_id);
+      if ("error" in rc) return rc.error;
+      return structured(
+        buildWeeklyMetrics(rc.ctx, {
+          guildId: a.guild_id,
+          weekStartDate: a.week_start_date,
+          comparePreviousWeek: a.compare_previous_week,
+          resourceChannelIds: a.resource_channel_ids,
+          officeHourChannelIds: a.office_hour_channel_ids,
+          excludeStaffFromMemberMetrics: a.exclude_staff_from_member_metrics,
+          collectionActive: getAnalyticsRuntime().active,
+        }),
+      );
     },
   }),
 ];

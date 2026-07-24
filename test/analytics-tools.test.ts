@@ -13,11 +13,21 @@ import {
 } from "./analytics-helpers.js";
 
 const ANALYTICS_TOOL_NAMES = [
+  // Phase 2
   "discord_analytics_status",
   "discord_sync_message_history",
   "discord_get_sync_runs",
   "discord_get_stored_message_counts",
   "discord_get_voice_sessions",
+  // Phase 3 reporting
+  "discord_get_member_engagement",
+  "discord_get_user_activity",
+  "discord_get_staff_response_metrics",
+  "discord_get_unanswered_questions",
+  "discord_get_unacknowledged_messages",
+  "discord_get_training_cadence",
+  "discord_get_office_hour_metrics",
+  "discord_generate_weekly_metrics",
 ];
 
 afterEach(() => {
