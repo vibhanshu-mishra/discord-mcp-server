@@ -26,14 +26,21 @@ test("unknown tool is a JSON-RPC InvalidParams protocol error, not a tool result
 });
 
 test("tools/list serves every definition and rejects unexpected cursors", async () => {
-  const client = await connectedClient();
-  const { tools } = await client.listTools();
-  assert.equal(tools.length, 97, "update this pin when adding/removing tools");
-  await assert.rejects(
-    () => client.listTools({ cursor: "bogus" }),
-    (err: unknown) => err instanceof McpError && err.code === ErrorCode.InvalidParams,
-  );
-  await client.close();
+  // The full surface (write tools included) is only advertised with read-only
+  // mode off; set it explicitly so this count pins the complete tool set.
+  process.env.DISCORD_READ_ONLY = "false";
+  try {
+    const client = await connectedClient();
+    const { tools } = await client.listTools();
+    assert.equal(tools.length, 97, "update this pin when adding/removing tools");
+    await assert.rejects(
+      () => client.listTools({ cursor: "bogus" }),
+      (err: unknown) => err instanceof McpError && err.code === ErrorCode.InvalidParams,
+    );
+    await client.close();
+  } finally {
+    delete process.env.DISCORD_READ_ONLY;
+  }
 });
 
 test("a handler failure surfaces as an isError result, not a protocol error", async () => {

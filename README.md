@@ -180,6 +180,7 @@ The server loads `.env` automatically via `dotenv`.
 | Variable                  | Default | Description                                                                                                                                                                                   |
 | ------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DISCORD_TOKEN`           | —       | **Required.** Bot token.                                                                                                                                                                      |
+| `DISCORD_READ_ONLY`       | `true`  | Read-only mode. **On by default** (and on for any missing/invalid value). While on, only read/list/search tools are exposed and every write tool is blocked. Set to `false` to enable writes. |
 | `DISCORD_MESSAGE_CONTENT` | `true`  | Set to `false` to stop requesting the Message Content privileged gateway intent at connect time.                                                                                              |
 | `DISCORD_GUILD_MEMBERS`   | `true`  | Set to `false` to stop requesting the Server Members privileged gateway intent at connect time.                                                                                               |
 | `DISCORD_MCP_TOOLSETS`    | `all`   | Comma-separated list of toolsets to expose, to keep the tool list small. Unset or `all` exposes every tool.                                                                                   |
@@ -190,6 +191,32 @@ These flags only control which gateway intents the server requests when identify
 Data access is governed by the **portal toggles**, not by these flags: this server reads everything over the REST API, which Discord gates on the portal setting alone. So with the portal toggles on, setting these flags to `false` loses nothing. With a portal toggle **off**, the corresponding data is restricted regardless of the flags: message bodies come back empty (`content`, `embeds`, `attachments` — except the bot's own messages, DMs, and messages that mention the bot) and member listing fails — enable the toggle in the portal to restore it.
 
 **Toolsets** (`DISCORD_MCP_TOOLSETS`): `discovery`, `messages`, `channels`, `permissions`, `members`, `roles`, `moderation`, `screening`, `stats`, `forums`, `webhooks`, `scheduled_events`, `invites`, `dm`. Example — `DISCORD_MCP_TOOLSETS=discovery,messages,members` exposes only the discovery, message, and member tools. Note: a toolset ships its whole module, including its destructive tools (`messages` includes bulk delete; `members` includes kick/ban) — use `DISCORD_ALLOWED_GUILDS` and the dry-run defaults to bound them. Only the listed toolsets' tools are advertised and callable. Unknown names make the server fail at startup instead of silently exposing everything (an empty value counts as unset and exposes all).
+
+---
+
+## Read-Only Mode
+
+**Read-only mode is enabled by default.** You do not need to configure anything to get it — if `DISCORD_READ_ONLY` is missing, empty, or set to an unrecognised value, the server treats it as `true` and stays read-only. This is a deliberate safety default.
+
+What it does:
+
+- **All existing tools remain in the source code.** Nothing is deleted or removed. Every messaging, moderation, role, channel, webhook, forum, event, invite, and DM tool is still there.
+- **While read-only mode is on, only tools that read, list, search, inspect, fetch, or retrieve Discord information are exposed to the AI client.** Tools that would send, reply, edit, delete, create, modify, moderate, ban, kick, timeout, react, pin, invite, schedule, upload, change permissions, manage roles, or create webhooks are **hidden**.
+- **Write tools are also blocked at runtime as a second layer.** Even if a write tool were somehow advertised or called by name, the server refuses to run it and returns a clear error explaining that the action is blocked because read-only mode is enabled. No change reaches Discord.
+- **Setting `DISCORD_READ_ONLY=false` restores the original tool availability** — every tool is exposed and callable exactly as before (still subject to `DISCORD_MCP_TOOLSETS`, `DISCORD_ALLOWED_GUILDS`, and the per-tool dry-run defaults).
+
+To enable write tools, set the variable explicitly and restart the server:
+
+```env
+DISCORD_READ_ONLY=false
+```
+
+Accepted "off" values (case-insensitive): `false`, `0`, `no`, `off`. Any other value keeps read-only mode on.
+
+### Important safety notes
+
+- **The Discord bot token must never be committed to Git.** Keep it in your MCP client config or a local `.env` file (which is git-ignored). Never paste a real token into `.env.example`, the README, or any tracked file.
+- **The bot cannot read private conversations between normal Discord user accounts.** It is a bot, not a user account. It can only read server content it has permission to access and DMs that users send directly to the bot. This server does not — and cannot legitimately — access personal user-account DMs.
 
 ---
 

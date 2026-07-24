@@ -9,6 +9,7 @@
  */
 
 import type { ToolModule, ToolDefinition, ToolHandler, ToolResult } from "./types.js";
+import { isReadOnlyMode, isReadOnlyTool, isToolAllowed, ReadOnlyModeError } from "../readonly.js";
 
 import discovery from "./discovery.js";
 import messages from "./messages.js";
@@ -85,24 +86,45 @@ const registry: Map<string, ToolHandler> = (() => {
 })();
 
 /**
- * Returns every tool definition across all modules.
- * Called on each tools/list request from the MCP client.
+ * Every tool definition by name, built once at load. Lets the read-only guard
+ * classify any registered tool (via its `readOnlyHint` annotation) at call time,
+ * independent of which definitions are currently advertised.
+ */
+const definitionsByName: Map<string, ToolDefinition> = (() => {
+  const map = new Map<string, ToolDefinition>();
+  for (const mod of modules) {
+    for (const def of mod.definitions) map.set(def.name, def);
+  }
+  return map;
+})();
+
+/**
+ * Returns the tool definitions to advertise on the current tools/list request.
+ * While read-only mode is enabled every write-capable tool is hidden — it stays
+ * in the source code and registry, it is simply not offered to the client.
+ * Read fresh each call so a config change is reflected without a restart.
  */
 export function getAllDefinitions(): ToolDefinition[] {
-  return modules.flatMap((m) => m.definitions);
+  return modules.flatMap((m) => m.definitions).filter((def) => isToolAllowed(def));
 }
 
-/** True if a tool with this name is registered (and not gated off). */
+/** True if a tool with this name is registered (regardless of read-only mode). */
 export function hasTool(name: string): boolean {
   return registry.has(name);
 }
 
 /**
- * Routes a tool call to its handler via the merged registry.
+ * Routes a tool call to its handler via the merged registry. Read-only mode is
+ * enforced here as a second layer of protection: even if a write tool were
+ * advertised or invoked by name, it is blocked before it can touch Discord.
  * @throws {Error} If no tool owns the given name.
+ * @throws {ReadOnlyModeError} If the tool is write-capable and read-only mode is on.
  */
 export async function handleTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
   const handler = registry.get(name);
   if (!handler) throw new Error(`Unknown tool: ${name}`);
+  if (isReadOnlyMode() && !isReadOnlyTool(definitionsByName.get(name)?.annotations)) {
+    throw new ReadOnlyModeError(name);
+  }
   return handler(args);
 }

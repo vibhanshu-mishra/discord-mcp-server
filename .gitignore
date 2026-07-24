@@ -1,6 +1,20 @@
 node_modules/
 dist/
+
+# Secrets & environment — never commit real tokens or local env files.
 .env
+.env.*
+!.env.example
+
+# Local data, databases, exports and logs — may contain server/member data.
+data/
+database/
+exports/
+logs/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
 
 # OS / editor cruft
 .DS_Store
