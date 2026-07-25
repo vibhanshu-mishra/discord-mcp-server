@@ -156,4 +156,22 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 2,
+    name: "qualitative-analysis-indexes",
+    up(db) {
+      // Phase 4's qualitative queries scan messages by guild + channel(s) within a
+      // date range (topics, feedback, per-channel packets). The v1 single-column
+      // indexes (channel_id, created_at) cannot serve that as one covering range
+      // scan, so a composite index is added. It is additive only — no data is
+      // touched and existing rows are preserved.
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_messages_guild_channel_created
+          ON messages (guild_id, channel_id, created_at);
+        -- Thread context retrieval looks up threads by their parent channel.
+        CREATE INDEX IF NOT EXISTS idx_channels_parent
+          ON channels (parent_channel_id);
+      `);
+    },
+  },
 ];

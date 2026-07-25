@@ -28,6 +28,13 @@ const ANALYTICS_TOOL_NAMES = [
   "discord_get_training_cadence",
   "discord_get_office_hour_metrics",
   "discord_generate_weekly_metrics",
+  // Phase 4 qualitative analysis
+  "discord_get_conversation_context",
+  "discord_get_topic_candidates",
+  "discord_get_recurring_question_candidates",
+  "discord_get_feedback_signals",
+  "discord_get_channel_conversation_summary_packet",
+  "discord_generate_qualitative_analysis_packet",
 ];
 
 afterEach(() => {

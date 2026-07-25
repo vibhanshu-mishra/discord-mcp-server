@@ -36,6 +36,18 @@ import {
 import { buildTrainingCadence } from "../analytics/reporting/trainingCadence.js";
 import { buildOfficeHourMetrics } from "../analytics/reporting/officeHours.js";
 import { buildWeeklyMetrics } from "../analytics/reporting/weeklyMetrics.js";
+import { QualitativeStore } from "../analytics/qualitative/store.js";
+import { getQualitativeConfig } from "../analytics/qualitative/config.js";
+import { OutputPolicy } from "../analytics/qualitative/contentPolicy.js";
+import type { QualContext } from "../analytics/qualitative/types.js";
+import { buildConversationContext } from "../analytics/qualitative/conversationContext.js";
+import { buildTopicCandidates } from "../analytics/qualitative/topicCandidates.js";
+import { buildRecurringQuestions } from "../analytics/qualitative/recurringQuestions.js";
+import { buildFeedbackSignals, ALL_CATEGORIES } from "../analytics/qualitative/feedbackSignals.js";
+import {
+  buildChannelPacket,
+  buildQualitativePacket,
+} from "../analytics/qualitative/analysisPacket.js";
 
 /**
  * Builds a read-only reporting context for a guild, or returns a clear error when
@@ -65,6 +77,27 @@ function reportContext(guildId: string): { ctx: ReportContext } | { error: ToolR
   }
   const store = new ReportingStore(rt.repo.connection, rt.repo.storeContent);
   return { ctx: { store, reporting: getReportingConfig() } };
+}
+
+/**
+ * Builds a read-only qualitative-analysis context (Phase 4), reusing the Phase 3
+ * report context and layering the qualitative store, config, and content policy.
+ * All qualitative tools funnel through this so the read-only/privacy guardrails
+ * are uniform. Returns the same clear error as `reportContext` when unavailable.
+ */
+function qualContext(guildId: string): { qctx: QualContext } | { error: ToolResult } {
+  const rc = reportContext(guildId);
+  if ("error" in rc) return { error: rc.error };
+  const rt = getAnalyticsRuntime();
+  const storeContent = rt.repo!.storeContent;
+  const qualitative = getQualitativeConfig();
+  const qctx: QualContext = {
+    qStore: new QualitativeStore(rt.repo!.connection, storeContent),
+    report: rc.ctx,
+    qualitative,
+    policy: new OutputPolicy(storeContent, qualitative),
+  };
+  return { qctx };
 }
 
 /** Optional array-of-snowflakes input, reused by several reporting tools. */
@@ -610,6 +643,214 @@ const tools = [
           officeHourChannelIds: a.office_hour_channel_ids,
           excludeStaffFromMemberMetrics: a.exclude_staff_from_member_metrics,
           collectionActive: getAnalyticsRuntime().active,
+        }),
+      );
+    },
+  }),
+
+  // ─── Phase 4: qualitative analysis (read-only, local DB only, no AI) ────────
+
+  defineTool({
+    name: "discord_get_conversation_context",
+    description:
+      "Reconstruct the local context around one message: bounded messages before/after, direct replies, thread messages, and reaction counts — assembled ONLY from the local database (never fetched from Discord). Redacted, pseudonymised excerpts are returned only when content output is enabled and requested.",
+    annotations: { title: "Conversation context", readOnlyHint: true, openWorldHint: false },
+    discordWrite: false,
+    schema: z.object({
+      guild_id: guildIdField,
+      message_id: snowflake.describe("The target message ID."),
+      messages_before: intIn(0, 25).default(5),
+      messages_after: intIn(0, 50).default(10),
+      include_thread: z.boolean().default(true),
+      include_direct_replies: z.boolean().default(true),
+      include_reactions: z.boolean().default(true),
+      include_excerpts: z.boolean().default(false),
+    }),
+    handle: async (a) => {
+      const rc = qualContext(a.guild_id);
+      if ("error" in rc) return rc.error;
+      return structured(
+        buildConversationContext(rc.qctx, {
+          guildId: a.guild_id,
+          messageId: a.message_id,
+          messagesBefore: a.messages_before,
+          messagesAfter: a.messages_after,
+          includeThread: a.include_thread,
+          includeDirectReplies: a.include_direct_replies,
+          includeReactions: a.include_reactions,
+          includeExcerpts: a.include_excerpts,
+        }),
+      );
+    },
+  }),
+
+  defineTool({
+    name: "discord_get_topic_candidates",
+    description:
+      "Lexical topic candidates (repeated words/phrases across distinct messages) for a date range, with distinct member/channel counts and previous-period trends. Lexical only — NOT a semantic AI topic model. Excerpts require content output to be enabled. Results are candidates for human review.",
+    annotations: { title: "Topic candidates", readOnlyHint: true, openWorldHint: false },
+    discordWrite: false,
+    schema: z.object({
+      guild_id: guildIdField,
+      start_date: isoDate,
+      end_date: isoDate,
+      channel_ids: idArray.optional(),
+      include_staff: z.boolean().optional(),
+      minimum_messages: intIn(1, 1000).optional(),
+      topic_limit: intIn(1, 100).optional(),
+      include_evidence: z.boolean().default(false),
+      compare_previous_period: z.boolean().default(true),
+    }),
+    handle: async (a) => {
+      const rc = qualContext(a.guild_id);
+      if ("error" in rc) return rc.error;
+      return structured(
+        buildTopicCandidates(rc.qctx, {
+          guildId: a.guild_id,
+          startDate: a.start_date,
+          endDate: a.end_date,
+          channelIds: a.channel_ids,
+          includeStaff: a.include_staff,
+          minimumMessages: a.minimum_messages,
+          topicLimit: a.topic_limit,
+          includeEvidence: a.include_evidence,
+          comparePreviousPeriod: a.compare_previous_period,
+        }),
+      );
+    },
+  }),
+
+  defineTool({
+    name: "discord_get_recurring_question_candidates",
+    description:
+      "Group similar candidate questions using deterministic Jaccard token-set similarity (no embeddings). Returns groups with counts, answered/unanswered totals, median staff-response time, and evidence message IDs. Lexical candidates requiring human review.",
+    annotations: {
+      title: "Recurring question candidates",
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
+    discordWrite: false,
+    schema: z.object({
+      guild_id: guildIdField,
+      start_date: isoDate,
+      end_date: isoDate,
+      channel_ids: idArray.optional(),
+      minimum_group_size: intIn(2, 100).default(2),
+      similarity_threshold: z.number().min(0).max(1).optional(),
+      limit: intIn(1, 100).optional(),
+      include_evidence: z.boolean().default(false),
+    }),
+    handle: async (a) => {
+      const rc = qualContext(a.guild_id);
+      if ("error" in rc) return rc.error;
+      return structured(
+        buildRecurringQuestions(rc.qctx, {
+          guildId: a.guild_id,
+          startDate: a.start_date,
+          endDate: a.end_date,
+          channelIds: a.channel_ids,
+          minimumGroupSize: a.minimum_group_size,
+          similarityThreshold: a.similarity_threshold,
+          limit: a.limit,
+          includeEvidence: a.include_evidence,
+        }),
+      );
+    },
+  }),
+
+  defineTool({
+    name: "discord_get_feedback_signals",
+    description:
+      "Classify messages into transparent lexical candidate categories (request, problem, blocker, confusion, positive_outcome, suggestion, help_request) via documented phrase dictionaries, with counts, distinct members/channels, and previous-period trends. Lexical candidates — NOT sentiment. Deleted and bot messages are excluded.",
+    annotations: { title: "Feedback signals", readOnlyHint: true, openWorldHint: false },
+    discordWrite: false,
+    schema: z.object({
+      guild_id: guildIdField,
+      start_date: isoDate,
+      end_date: isoDate,
+      channel_ids: idArray.optional(),
+      categories: z.array(z.enum(ALL_CATEGORIES as [string, ...string[]])).optional(),
+      include_staff: z.boolean().optional(),
+      include_evidence: z.boolean().default(false),
+      limit: intIn(1, 500).optional(),
+    }),
+    handle: async (a) => {
+      const rc = qualContext(a.guild_id);
+      if ("error" in rc) return rc.error;
+      return structured(
+        buildFeedbackSignals(rc.qctx, {
+          guildId: a.guild_id,
+          startDate: a.start_date,
+          endDate: a.end_date,
+          channelIds: a.channel_ids,
+          categories: a.categories as never,
+          includeStaff: a.include_staff,
+          includeEvidence: a.include_evidence,
+          limit: a.limit,
+        }),
+      );
+    },
+  }),
+
+  defineTool({
+    name: "discord_get_channel_conversation_summary_packet",
+    description:
+      "A structured, deterministic evidence packet for one channel (totals, candidate questions, lexical topics, feedback counts, active hours, major threads, and a BALANCED evidence sample) for an MCP client to summarise. This tool does NOT generate an AI summary. Excerpts require content output to be enabled.",
+    annotations: { title: "Channel summary packet", readOnlyHint: true, openWorldHint: false },
+    discordWrite: false,
+    schema: z.object({
+      guild_id: guildIdField,
+      channel_id: snowflake.describe("The channel to build an evidence packet for."),
+      start_date: isoDate,
+      end_date: isoDate,
+      maximum_messages: intIn(1, 500).optional(),
+      include_staff: z.boolean().optional(),
+      include_excerpts: z.boolean().default(false),
+    }),
+    handle: async (a) => {
+      const rc = qualContext(a.guild_id);
+      if ("error" in rc) return rc.error;
+      return structured(
+        buildChannelPacket(rc.qctx, {
+          guildId: a.guild_id,
+          channelId: a.channel_id,
+          startDate: a.start_date,
+          endDate: a.end_date,
+          maximumMessages: a.maximum_messages,
+          includeStaff: a.include_staff,
+          includeExcerpts: a.include_excerpts,
+        }),
+      );
+    },
+  }),
+
+  defineTool({
+    name: "discord_generate_qualitative_analysis_packet",
+    description:
+      "A structured, deterministic guild-wide qualitative packet (lexical topics, recurring-question groups, feedback signals, and reused Phase 3 conversation-health metrics), with an optional bounded redacted evidence sample, for an MCP client to interpret. This tool does NOT call any AI provider or write prose.",
+    annotations: { title: "Qualitative analysis packet", readOnlyHint: true, openWorldHint: false },
+    discordWrite: false,
+    schema: z.object({
+      guild_id: guildIdField,
+      start_date: isoDate,
+      end_date: isoDate,
+      channel_ids: idArray.optional(),
+      compare_previous_period: z.boolean().default(true),
+      include_evidence: z.boolean().default(false),
+      maximum_evidence_messages: intIn(1, 500).optional(),
+    }),
+    handle: async (a) => {
+      const rc = qualContext(a.guild_id);
+      if ("error" in rc) return rc.error;
+      return structured(
+        buildQualitativePacket(rc.qctx, {
+          guildId: a.guild_id,
+          startDate: a.start_date,
+          endDate: a.end_date,
+          channelIds: a.channel_ids,
+          comparePreviousPeriod: a.compare_previous_period,
+          includeEvidence: a.include_evidence,
+          maximumEvidenceMessages: a.maximum_evidence_messages,
         }),
       );
     },

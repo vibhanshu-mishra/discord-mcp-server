@@ -344,6 +344,58 @@ Set these in your `.env` (all optional except where a tool requires them; see `.
 
 ---
 
+## Qualitative Analysis and Content Privacy
+
+Six additional **read-only** tools turn the local database into structured qualitative evidence — what members discuss, which questions recur, and what requests/problems/feedback appear. **The MCP server itself never calls Claude, OpenAI, Gemini, or any other AI provider.** It reads stored data, selects and ranks evidence deterministically, redacts/pseudonymises it, and returns bounded structured JSON. **Your connected MCP client** performs any summarisation or interpretation. Every Phase 4 tool is read-only toward **both Discord and the local database** and works while `DISCORD_READ_ONLY=true`.
+
+### The six tools
+
+- `discord_get_conversation_context` — bounded context around one message (before/after, direct replies, thread), assembled only from local data (never fetched from Discord).
+- `discord_get_topic_candidates` — lexical topic candidates (repeated words/phrases) with distinct member/channel counts and previous-period trends.
+- `discord_get_recurring_question_candidates` — groups of similar candidate questions (deterministic Jaccard token-set similarity — no embeddings).
+- `discord_get_feedback_signals` — messages classified into lexical candidate categories (request, problem, blocker, confusion, positive_outcome, suggestion, help_request).
+- `discord_get_channel_conversation_summary_packet` — a deterministic evidence packet for one channel for an MCP client to summarise (no AI summary is generated).
+- `discord_generate_qualitative_analysis_packet` — a guild-wide structured packet combining lexical analysis with reused Phase 3 metrics.
+
+### Content privacy — two separate gates
+
+Storing message content and **returning** it through MCP are different decisions:
+
+- `DISCORD_ANALYTICS_STORE_MESSAGE_CONTENT` controls whether text is **stored** locally.
+- `DISCORD_ANALYTICS_ALLOW_CONTENT_OUTPUT` (**default `false`**) controls whether stored text may be **returned** through MCP.
+
+**Both must be `true`** (and the per-call `include_*`/`include_evidence` flag set) before any readable excerpt leaves the database. When output is disabled, tools return IDs, timestamps, counts, channel info, content hashes, and deterministic lexical labels, and clearly report that content output is disabled — tools that need readable content return a limitation instead of fabricating results. Message content never appears in logs, errors, or startup output.
+
+### Redaction, pseudonymisation, links, excerpts
+
+- **Pseudonymisation** (`DISCORD_ANALYTICS_PSEUDONYMIZE_USERS`, default on): user IDs, usernames, and display names are replaced with stable generic labels within one response (`Member 1`, `Staff 1`, `Primary User`); the staff-vs-member distinction is preserved. Labels are not stable across unrelated calls. With pseudonymisation off, raw user IDs are returned only when content output is also enabled.
+- **Mention redaction** (`DISCORD_ANALYTICS_REDACT_MENTIONS`, default on): user/role/channel mentions and `@everyone`/`@here` become `[member]`/`[role]`/`[channel]`/`[everyone]`/`[here]`; raw mention IDs are never returned.
+- **Links** are reduced to their bare `scheme://host`, dropping paths, query strings, and fragments (so signed/auth tokens are removed). Attachment URLs are never returned by qualitative tools.
+- **Excerpts** are opt-in, truncated to `DISCORD_ANALYTICS_MAX_EXCERPT_CHARACTERS` (default 240, with a truncation marker), and evidence items are capped by `DISCORD_ANALYTICS_MAX_EVIDENCE_MESSAGES` (default 100).
+- **Excluded channels** (`DISCORD_ANALYTICS_QUALITATIVE_EXCLUDED_CHANNEL_IDS`) are filtered out in SQL before any content leaves the database.
+
+### Methodology (all lexical — not AI)
+
+- **Topics** are counted from unigrams/bigrams after stop-word removal, ranked by **distinct message count** (then distinct members); bigrams are preferred and near-duplicate labels merged. This is **lexical, not semantic** — never equivalent to an AI topic model.
+- **Recurring questions** reuse the Phase 3 candidate-question heuristic and group by **Jaccard similarity** of normalised token sets above `DISCORD_ANALYTICS_QUESTION_SIMILARITY_THRESHOLD`; each message joins at most one group, and a group needs at least two questions.
+- **Feedback signals** match central, documented phrase dictionaries; a message may match several categories, and the matched phrases are returned. These are **lexical candidates — not sentiment or emotion.**
+- Deleted and bot messages are excluded everywhere; staff are excluded from topic/feedback analysis unless `DISCORD_ANALYTICS_QUALITATIVE_INCLUDE_STAFF=true`.
+
+**All qualitative results are candidates that require human review.** No Phase 4 tool modifies Discord or the local database, and none generates persuasive prose.
+
+### Example requests
+
+- Topic candidates for a week:
+  `discord_get_topic_candidates` with `{ "guild_id": "<id>", "start_date": "2024-06-03", "end_date": "2024-06-09" }`
+- Recurring questions:
+  `discord_get_recurring_question_candidates` with `{ "guild_id": "<id>", "start_date": "2024-06-03", "end_date": "2024-06-09" }`
+- A channel evidence packet:
+  `discord_get_channel_conversation_summary_packet` with `{ "guild_id": "<id>", "channel_id": "<id>", "start_date": "2024-06-03", "end_date": "2024-06-09" }`
+- Context around a message:
+  `discord_get_conversation_context` with `{ "guild_id": "<id>", "message_id": "<id>" }`
+
+---
+
 ## Creating Your Discord Bot
 
 1. Go to [discord.com/developers/applications](https://discord.com/developers/applications)
