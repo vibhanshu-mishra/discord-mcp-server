@@ -6,15 +6,17 @@ dist/
 .env.*
 !.env.example
 
-# Local data, databases, exports and logs — may contain server/member data.
+# Local data, databases, backups, exports and logs — may contain server/member data.
 data/
 database/
+backups/
 exports/
 logs/
 *.db
 *.db-journal
 *.sqlite
 *.sqlite3
+*.lock
 
 # OS / editor cruft
 .DS_Store

@@ -21,6 +21,13 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "node --import tsx --test test/*.test.ts",
+    "cli": "node dist/cli/index.js",
+    "doctor": "node dist/cli/index.js doctor",
+    "db:check": "node dist/cli/index.js db-check",
+    "analytics:sync": "node dist/cli/index.js sync",
+    "analytics:backup": "node dist/cli/index.js backup",
+    "analytics:export": "node dist/cli/index.js export",
+    "analytics:prune": "node dist/cli/index.js prune",
     "version": "node scripts/sync-version.js && git add server.json",
     "prepublishOnly": "npm run build"
   },

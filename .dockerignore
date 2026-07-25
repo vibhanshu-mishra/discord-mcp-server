@@ -1,13 +1,32 @@
-node_modules
-dist
+# Never send source control, deps, or build artifacts into the build context.
 .git
 .github
+node_modules
+dist
+coverage
+
+# Never send secrets or local env files (keep .env.example for documentation).
 .env
-.env.example
+.env.*
+!.env.example
+
+# Never send local data, backups, exports, logs, or databases.
+data
+database
+backups
+exports
+logs
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Editor / tooling cruft and tests (not needed in the runtime image).
 .mcp.json
 .claude
 *.md
 .dockerignore
 .prettierrc
+.prettierignore
 eslint.config.mjs
 test

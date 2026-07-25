@@ -396,6 +396,81 @@ Storing message content and **returning** it through MCP are different decisions
 
 ---
 
+## Operations, Backups, and Deployment
+
+A generic operations CLI makes the server safe to install, diagnose, sync, back up, export, and maintain — **no MCP client required**. **Build first** (`npm run build`), then run `node dist/cli/index.js <command>` (or the npm scripts below). **No operational command writes to Discord**, and remote/authenticated MCP transport is **not** part of this phase (stdio only).
+
+### Commands
+
+| Command       | npm script                 | Purpose                                                                                                                                     |
+| ------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `doctor`      | `npm run doctor`           | Diagnose config and readiness. Offline by default; `--online` connects to Discord for read-only checks.                                     |
+| `init-config` | —                          | Create a safe `.env` scaffold (never overwrites without `--force`; `--dry-run`, `--path`).                                                  |
+| `db-check`    | `npm run db:check`         | Read-only database health (`--json`, `--clear-stale-lock`).                                                                                 |
+| `sync`        | `npm run analytics:sync`   | Import Discord history to the local DB (`--guild-id`, `--start-date`, `--channel-ids`, `--max-messages`, `--dry-run`, `--json`).            |
+| `backup`      | `npm run analytics:backup` | Consistent, verified backup (`--output-dir`, `--dry-run`, `--json`).                                                                        |
+| `export`      | `npm run analytics:export` | Privacy-safe report export (`--report`, `--guild-id`, `--start-date`, `--end-date`, `--format`, `--include-evidence`, `--force`, `--json`). |
+| `prune`       | `npm run analytics:prune`  | Delete old records — dry-run by default; `--confirm` to delete (`--before`, `--no-backup`).                                                 |
+
+Examples (fake IDs only):
+
+```bash
+node dist/cli/index.js doctor
+node dist/cli/index.js sync --guild-id 123456789012345678 --start-date 2026-01-01
+node dist/cli/index.js backup --json
+node dist/cli/index.js export --report weekly-metrics --guild-id 123456789012345678 --start-date 2026-07-06 --format json
+node dist/cli/index.js prune --before 2025-01-01 --dry-run
+node dist/cli/index.js prune --before 2025-01-01 --confirm
+```
+
+### Exit codes
+
+`0` success · `1` unexpected failure · `2` invalid command/argument · `3` configuration failure · `4` database failure · `5` Discord connection/authorisation failure · `6` lock conflict · `7` partial operation failure.
+
+### Doctor: offline vs online
+
+The default `doctor` never connects to Discord — it checks the runtime (Node ≥ 22, `node:sqlite`, build), configuration (token **configured/missing only, never shown**; read-only mode; analytics/content flags; guild allow-list intersection; ID/time-zone validity; unsafe combinations), the filesystem (writable data/backup/export dirs; that `.env` and databases are git-ignored and not tracked), the database (integrity, schema version, migrations, required tables/indexes, open voice sessions), and the process lock. Only with `--online` does it connect, and even then it performs **read-only** checks (auth, guild visibility) — never a write.
+
+### One writer per database, and lock recovery
+
+Live collection and the write commands (`sync`, `prune`) take an **exclusive file lock** (`DISCORD_ANALYTICS_LOCK_PATH`, default `data/discord-analytics.lock`) so **only one writer** uses a database at a time; a second writer is refused with exit code `6`. Read-only commands (`db-check`, `backup`, `export`) do not take the writer lock. The lock stores PID, start time, hostname, a database-path hash, and the command kind (no secrets). Locks release on normal exit and on SIGINT/SIGTERM. A hard crash can leave a stale lock; it is **reported, never auto-deleted**. Recover explicitly:
+
+```bash
+node dist/cli/index.js db-check --clear-stale-lock
+```
+
+A lock is only cleared when it is demonstrably stale (same host, dead PID). A lock from another host cannot be verified remotely and is treated as live.
+
+### Backups and integrity
+
+`backup` uses SQLite `VACUUM INTO` to write a **consistent snapshot** even while a collector is running, verifies the copy (opens read-only + integrity check), and writes a secret-free manifest (timestamp, app/schema version, source basename, filename, size, content-storage status, checksum). It never overwrites an existing file, removes incomplete files on failure, and never contacts Discord.
+
+### Privacy-safe exports
+
+`export` reuses the Phase 3/4 services. **Aggregate data is the default.** Message excerpts appear **only** when message content is stored **and** `DISCORD_ANALYTICS_ALLOW_CONTENT_OUTPUT=true` **and** `--include-evidence` is passed — otherwise excerpts are withheld and a limitation is reported. Redaction, pseudonymisation, excluded channels, and excerpt limits are preserved; attachment URLs and tokens are never exported. CSV is available for tabular reports (`member-engagement`, `topic-candidates`, `feedback-signals`, `recurring-questions`); nested reports require `--format json`. The CLI prints only the filename and a summary — never the report's private contents. Exports are git-ignored.
+
+### Retention and pruning
+
+`prune` is manual and **dry-run by default**; actual deletion requires `--confirm`. It validates the cutoff, shows the counts to be removed (messages, attachments, reactions, voice sessions, sync runs), deletes inside a transaction cascading to attachments/reactions (nothing orphaned), **preserves open voice sessions and guild/channel/member metadata**, and runs an integrity check afterwards. A safety **backup is taken before deletion** unless `--no-backup` is supplied (which prints a clear warning). `DISCORD_ANALYTICS_RETENTION_DAYS=0` (default) disables the default cutoff; **nothing is ever pruned automatically at startup**, and pruning is intentionally **not** exposed as an MCP tool. Vacuuming is not automatic — the command recommends a manual `VACUUM` when useful.
+
+### Docker
+
+```bash
+docker build -t discord-mcp .
+docker run --rm -i \
+  -e DISCORD_TOKEN=your_bot_token_here \
+  -v discord-analytics-data:/app/data \
+  discord-mcp
+```
+
+The image is multi-stage, installs only production dependencies, runs as a **non-root** user, never copies `.env`/databases/backups/exports/logs/tests, exposes **no network port**, provides a writable `/app/data` volume, and includes a `HEALTHCHECK` that runs the offline `doctor`. A [docker-compose.example.yml](docker-compose.example.yml) shows a persistent volume, an env file, `restart: unless-stopped`, and a comment reminding you to run **one collector per database**. Copy it to `docker-compose.yml` and add your own `.env`.
+
+### Graceful shutdown & platform notes
+
+The server and write commands release their lock on normal exit and on SIGINT/SIGTERM. On **Windows**, POSIX signal delivery differs — prefer stopping the process cleanly (Ctrl-C) so the lock is released; a stale lock after a hard kill is recovered with `db-check --clear-stale-lock`. On **macOS/Linux** signals behave as described. Cross-host lock files (e.g. a shared network volume) cannot verify a remote PID and are treated as live — run one collector per database.
+
+---
+
 ## Creating Your Discord Bot
 
 1. Go to [discord.com/developers/applications](https://discord.com/developers/applications)

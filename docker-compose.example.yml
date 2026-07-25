@@ -1,0 +1,43 @@
+# Example Docker Compose file for the Discord MCP Server.
+# Copy to docker-compose.yml and adjust. Do NOT commit real tokens or IDs.
+#
+# IMPORTANT: run only ONE active collector per database. The analytics database
+# uses a process lock; a second writer (a second container or a CLI sync) against
+# the same database volume will be refused. Scale to exactly one collector.
+#
+# No network port is published: this phase uses stdio MCP transport only. Remote
+# authenticated MCP transport is a later phase.
+
+services:
+  discord-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Or use a published image instead of building:
+    # image: discord-mcp:latest
+    restart: unless-stopped
+
+    # Provide configuration via an env file (preferred) or the environment block.
+    # Never hard-code the token here.
+    env_file:
+      - .env
+    environment:
+      # Safe defaults shown; override in your .env instead of editing this file.
+      DISCORD_READ_ONLY: "true"
+      DISCORD_ANALYTICS_ENABLED: "false"
+      DISCORD_ANALYTICS_ALLOW_CONTENT_OUTPUT: "false"
+      DISCORD_ANALYTICS_DB_PATH: "data/discord-analytics.sqlite"
+      # DISCORD_TOKEN is intentionally NOT set here — put it in your .env file.
+
+    # Persist the analytics database, and optionally backups/exports, on the host.
+    volumes:
+      - discord-analytics-data:/app/data
+      # - ./backups:/app/backups
+      # - ./exports:/app/exports
+
+    # The image's HEALTHCHECK runs the offline doctor; Compose reports status.
+    # To run a one-off operation instead of the server, override the command:
+    #   docker compose run --rm discord-mcp node dist/cli/index.js db-check
+
+volumes:
+  discord-analytics-data:
