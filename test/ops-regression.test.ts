@@ -39,7 +39,12 @@ test("no AI-provider or vector dependencies", () => {
     devDependencies?: Record<string, string>;
   };
   const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  // `@anthropic-ai/mcpb` is the MCP Bundle packaging toolchain (dev-only), NOT an
+  // AI-provider SDK; it ships no model client. Everything else must not look like
+  // an AI/vector dependency.
+  const ALLOWED = new Set(["@anthropic-ai/mcpb"]);
   for (const name of Object.keys(deps)) {
+    if (ALLOWED.has(name)) continue;
     assert.ok(
       !/anthropic|openai|@google|google-generative|langchain|pinecone|chromadb|weaviate|@xenova|onnxruntime|transformers|embedding/i.test(
         name,

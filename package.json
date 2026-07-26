@@ -28,6 +28,11 @@
     "analytics:backup": "node dist/cli/index.js backup",
     "analytics:export": "node dist/cli/index.js export",
     "analytics:prune": "node dist/cli/index.js prune",
+    "mcpb:prepare": "node scripts/mcpb-build.mjs prepare",
+    "mcpb:validate": "mcpb validate mcpb/manifest.json",
+    "mcpb:pack": "node scripts/mcpb-build.mjs pack",
+    "mcpb:build": "node scripts/mcpb-build.mjs build",
+    "mcpb:inspect": "node scripts/mcpb-inspect.mjs",
     "version": "node scripts/sync-version.js && git add server.json",
     "prepublishOnly": "npm run build"
   },
@@ -69,7 +74,8 @@
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.8.3",
     "tsx": "^4.22.4",
-    "typescript": "^7.0.2",
-    "typescript-eslint": "^8.60.0"
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.60.0",
+    "@anthropic-ai/mcpb": "2.1.2"
   }
 }

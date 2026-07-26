@@ -18,6 +18,11 @@ logs/
 *.sqlite3
 *.lock
 
+# MCP bundle build staging and generated artifacts (never commit the .mcpb).
+.mcpb-build/
+artifacts/
+*.mcpb
+
 # OS / editor cruft
 .DS_Store
 

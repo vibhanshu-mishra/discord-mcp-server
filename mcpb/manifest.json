@@ -1,0 +1,148 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/mcpb/main/dist/mcpb-manifest.schema.json",
+  "manifest_version": "0.3",
+  "name": "discord-mcp-server",
+  "display_name": "Discord MCP Server",
+  "version": "2.1.0",
+  "description": "A read-only-by-default Discord MCP server with private local analytics — no external AI provider.",
+  "long_description": "Discord MCP Server connects Claude Desktop to a Discord bot for read-only analytics. It stores messages, reactions, threads, and voice sessions in a private local SQLite database, computes deterministic community metrics and privacy-controlled qualitative candidates, and never sends, edits, deletes, or reacts to anything on Discord. Read-only mode is enabled by default and cannot be disabled through this bundle. Message content output is disabled by default. The server calls no external AI provider; the connected client performs any interpretation.",
+  "author": {
+    "name": "Discord MCP Server Contributors"
+  },
+  "license": "MIT",
+  "keywords": ["discord", "mcp", "analytics", "read-only", "local", "privacy"],
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"],
+      "env": {
+        "DISCORD_TOKEN": "${user_config.discord_token}",
+        "DISCORD_ALLOWED_GUILDS": "${user_config.guild_id}",
+        "DISCORD_ANALYTICS_GUILD_IDS": "${user_config.guild_id}",
+        "DISCORD_READ_ONLY": "true",
+        "DISCORD_ANALYTICS_ENABLED": "true",
+        "DISCORD_MESSAGE_CONTENT": "true",
+        "DISCORD_GUILD_MEMBERS": "true",
+        "DISCORD_ANALYTICS_ALLOW_CONTENT_OUTPUT": "${user_config.allow_content_output}",
+        "DISCORD_ANALYTICS_STORE_MESSAGE_CONTENT": "${user_config.store_message_content}",
+        "DISCORD_ANALYTICS_COLLECT_VOICE": "${user_config.collect_voice}",
+        "DISCORD_ANALYTICS_COLLECT_BOT_DMS": "${user_config.collect_bot_dms}",
+        "DISCORD_MCP_LOG_LEVEL": "${user_config.log_level}",
+        "DISCORD_ANALYTICS_DB_PATH": "${user_config.data_directory}/discord-analytics.sqlite",
+        "DISCORD_ANALYTICS_LOCK_PATH": "${user_config.data_directory}/discord-analytics.lock",
+        "DISCORD_ANALYTICS_BACKUP_DIR": "${user_config.data_directory}/backups",
+        "DISCORD_ANALYTICS_EXPORT_DIR": "${user_config.data_directory}/exports",
+        "DISCORD_ANALYTICS_PRIMARY_USER_ID": "${user_config.primary_user_id}",
+        "DISCORD_ANALYTICS_STAFF_USER_IDS": "${user_config.staff_user_ids}",
+        "DISCORD_ANALYTICS_RESOURCE_CHANNEL_IDS": "${user_config.resource_channel_ids}",
+        "DISCORD_ANALYTICS_OFFICE_HOUR_CHANNEL_IDS": "${user_config.office_hour_channel_ids}",
+        "DISCORD_ANALYTICS_HISTORY_START_DATE": "${user_config.history_start_date}",
+        "DISCORD_ANALYTICS_TIMEZONE": "${user_config.analytics_timezone}"
+      }
+    }
+  },
+  "tools_generated": true,
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=22.0.0"
+    }
+  },
+  "user_config": {
+    "discord_token": {
+      "type": "string",
+      "title": "Discord bot token",
+      "description": "The bot token from your Discord Developer Portal application. Kept private; never shown or logged.",
+      "required": true,
+      "sensitive": true
+    },
+    "guild_id": {
+      "type": "string",
+      "title": "Discord server (guild) ID",
+      "description": "The numeric ID of the Discord server to analyse (right-click the server icon with Developer Mode on, then 'Copy Server ID'). Used as both the allowed guild and the analytics guild.",
+      "required": true
+    },
+    "data_directory": {
+      "type": "directory",
+      "title": "Local data directory",
+      "description": "A folder OUTSIDE this extension where the local SQLite database, process lock, backups, and exports are stored. Choose a private location; a per-user default is suggested.",
+      "required": true,
+      "default": "${HOME}/DiscordMCPServer"
+    },
+    "primary_user_id": {
+      "type": "string",
+      "title": "Primary user ID (optional)",
+      "description": "Optional Discord user ID of a primary user (e.g. community owner or administrator) whose activity appears in the weekly report. Leave blank if unused.",
+      "required": false
+    },
+    "staff_user_ids": {
+      "type": "string",
+      "title": "Staff user IDs (optional)",
+      "description": "Optional Discord user IDs treated as staff, entered as a comma-separated list (each ID is a long number). Leave blank if unused.",
+      "required": false
+    },
+    "resource_channel_ids": {
+      "type": "string",
+      "title": "Resource channel IDs (optional)",
+      "description": "Optional comma-separated channel IDs where trainings/resources are expected, for cadence checks. Leave blank if unused.",
+      "required": false
+    },
+    "office_hour_channel_ids": {
+      "type": "string",
+      "title": "Office-hour voice channel IDs (optional)",
+      "description": "Optional comma-separated voice channel IDs used for office-hour attendance. Leave blank if unused.",
+      "required": false
+    },
+    "history_start_date": {
+      "type": "string",
+      "title": "Default history start date (optional)",
+      "description": "Optional default lower bound for history imports, in YYYY-MM-DD form (e.g. 2026-01-01). Leave blank to specify the date per sync.",
+      "required": false
+    },
+    "analytics_timezone": {
+      "type": "string",
+      "title": "Analytics time zone (optional)",
+      "description": "IANA time zone for daily/weekly grouping, e.g. UTC or America/New_York.",
+      "required": false,
+      "default": "UTC"
+    },
+    "store_message_content": {
+      "type": "boolean",
+      "title": "Store readable message content locally",
+      "description": "When on, readable message text is stored in the local database (needed for topic and question analysis). It stays on your machine. When off, only metadata and one-way hashes are kept.",
+      "required": false,
+      "default": true
+    },
+    "allow_content_output": {
+      "type": "boolean",
+      "title": "Allow message excerpts to be returned",
+      "description": "When off (recommended), tools return counts, IDs, and lexical labels but never readable message excerpts. Turn on only if you accept sending redacted excerpts to the connected client.",
+      "required": false,
+      "default": false
+    },
+    "collect_voice": {
+      "type": "boolean",
+      "title": "Collect voice attendance while running",
+      "description": "When on, voice-channel joins/leaves are recorded while the extension is running. Historical voice attendance cannot be reconstructed.",
+      "required": false,
+      "default": false
+    },
+    "collect_bot_dms": {
+      "type": "boolean",
+      "title": "Store DMs sent directly to the bot",
+      "description": "When on, direct messages users send to the bot are stored. These are never other people's private conversations. Off by default.",
+      "required": false,
+      "default": false
+    },
+    "log_level": {
+      "type": "string",
+      "title": "Log level",
+      "description": "Verbosity for logs: error, warning, info, or debug.",
+      "required": false,
+      "default": "info"
+    }
+  }
+}

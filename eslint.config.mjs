@@ -3,7 +3,7 @@ import tseslint from "typescript-eslint";
 import prettier from "eslint-config-prettier";
 
 export default tseslint.config(
-  { ignores: ["dist/", "node_modules/", "live-test*.mjs"] },
+  { ignores: ["dist/", "node_modules/", "live-test*.mjs", ".mcpb-build/", "artifacts/"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   prettier,
@@ -14,7 +14,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["scripts/**/*.js"],
+    files: ["scripts/**/*.{js,mjs}"],
     languageOptions: {
       globals: {
         require: "readonly",
@@ -22,6 +22,7 @@ export default tseslint.config(
         __dirname: "readonly",
         console: "readonly",
         process: "readonly",
+        URL: "readonly",
       },
     },
     rules: {

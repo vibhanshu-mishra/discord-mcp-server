@@ -1,3 +1,7 @@
 live-test*.mjs
 REMAINING_AUDIT.md
 CLAUDE.md
+dist/
+.mcpb-build/
+artifacts/
+*.mcpb
