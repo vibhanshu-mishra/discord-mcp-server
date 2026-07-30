@@ -2,7 +2,7 @@
 
 # Discord MCP Server
 
-**A read-only-by-default Discord MCP server with private local analytics — installable as a one-click Claude Desktop extension.**
+**A read-only-by-default Discord MCP server with private local analytics, installable as a one-click Claude Desktop extension.**
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-green)](https://nodejs.org)
@@ -15,13 +15,13 @@
 
 ## Project overview
 
-Discord MCP Server connects an MCP client (such as Claude Desktop) to a Discord bot and turns your community's activity into **structured, auditable analytics** — while never changing anything on Discord.
+Discord MCP Server connects an MCP client (such as Claude Desktop) to a Discord bot and turns your community's activity into **structured, auditable analytics** while never changing anything on Discord.
 
 - **Read-only by default.** Write tools remain in the source but are hidden and blocked at runtime unless you explicitly opt out; the desktop extension never opts out.
 - **Private local SQLite analytics.** Messages, reactions, threads, and voice sessions are stored in a database on your own machine.
 - **Deterministic metrics.** Member engagement, per-user activity, staff response health, unanswered/unacknowledged candidates, training cadence, office-hour attendance, and weekly reports — all reproducible, no black box.
 - **Privacy-controlled qualitative analysis.** Lexical topic candidates, recurring-question groups, feedback signals, conversation context, and evidence packets. Message content output is **off by default**, and the server calls **no external AI provider** — your MCP client does any interpretation.
-- **Operations CLI.** Diagnose (`doctor`), check the database, sync history, back up, export, and prune — from the terminal, no MCP client required.
+- **Operations CLI.** Diagnose (`doctor`), check the database, sync history, back up, export, and prune from the terminal, no MCP client required.
 - **Claude Desktop extension.** Package everything as a single `.mcpb` for one-click local installation (recommended for non-developers).
 
 ---
@@ -84,11 +84,11 @@ Claude Desktop starts the local server automatically when a conversation needs i
 - **Personal user-to-user Discord DMs cannot be accessed.** The bot is not a user; it can only see server content it has permission to read and DMs sent directly to it.
 - **DMs to the bot are optional** and off by default (`collect_bot_dms`).
 - **Stored messages remain local** in your chosen data directory; nothing is uploaded anywhere.
-- **Content output is disabled by default.** Returning readable excerpts through MCP requires _both_ content storage and content output to be enabled, plus a per-call flag; otherwise only counts, IDs, timestamps, and lexical labels are returned.
+- **Content output is disabled by default.** Returning readable excerpts through MCP requires _both_ content storage and content output to be enabled, plus a per-call flag; otherwise, only counts, IDs, timestamps, and lexical labels are returned.
 - **Pseudonymisation and mention redaction** apply to qualitative outputs (user IDs/names become generic labels; mentions and signed URL parameters are stripped).
 - **No external AI-provider calls** and no embeddings/vector storage — the server is provider-neutral.
 - **Never commit a token.** The bot token belongs in the extension config or a local `.env`, both of which are ignored by Git.
-- **The `.mcpb` format has no platform sandbox**, so the _server itself_ enforces these restrictions (read-only mode, content gates, one-writer locking) — they are not delegated to the host.
+- **The `.mcpb` format has no platform sandbox**, so the _server itself_ enforces these restrictions (read-only mode, content gates, one-writer locking); they are not delegated to the host.
 - **One writer per database.** A file lock prevents two collectors (or a collector plus a CLI writer) from using one database at a time.
 
 ---
