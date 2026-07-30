@@ -238,3 +238,11 @@ Released under the [MIT License](LICENSE). This project builds on the open-sourc
 Discord MCP server ecosystem; see the `LICENSE` file for the full terms and
 attribution. Bundle metadata uses the generic author "Discord MCP Server
 Contributors".
+
+---
+
+## Acknowledgement
+
+This project is originally forked from [PaSympa/discord-mcp](https://github.com/PaSympa/discord-mcp).
+
+The current implementation includes substantial modifications and additional functionality, including read-only protections, local SQLite analytics, reporting tools, privacy controls, operational tooling, and Claude Desktop extension packaging.
