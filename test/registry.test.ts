@@ -2,6 +2,75 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { selectModules, hasTool } from "../src/tools/index.js";
 import { assertAllowedGuild, isGuildAllowed } from "../src/client.js";
+import { isDestructiveTool, mutatesDiscord } from "../src/readonly.js";
+
+test("every Discord mutation has explicit classification, a handler, and accurate destructive metadata", () => {
+  delete process.env.DISCORD_MCP_TOOLSETS;
+  const modules = selectModules();
+  const definitions = modules.flatMap((module) => module.definitions);
+
+  const discordWrites = definitions.filter(mutatesDiscord);
+  assert.ok(discordWrites.length > 0, "the registry must include Discord write tools");
+
+  for (const definition of discordWrites) {
+    assert.equal(
+      definition.discordWrite,
+      true,
+      `${definition.name} must explicitly declare discordWrite: true`,
+    );
+    assert.equal(
+      definition.annotations?.readOnlyHint,
+      false,
+      `${definition.name} must advertise its Discord mutation side effect`,
+    );
+    const owner = modules.find((module) => module.definitions.includes(definition));
+    assert.ok(owner, `${definition.name} must be owned by a selected toolset`);
+    assert.ok(
+      owner.handlers.has(definition.name),
+      `${definition.name} must route to a real handler`,
+    );
+  }
+
+  for (const definition of definitions.filter((item) => isDestructiveTool(item.annotations))) {
+    assert.equal(
+      definition.discordWrite,
+      true,
+      `${definition.name} is destructive and must be a Discord write`,
+    );
+    assert.equal(
+      definition.annotations?.destructiveHint,
+      true,
+      `${definition.name} must retain destructiveHint: true`,
+    );
+  }
+});
+
+test("each write-capable toolset selects its write tools without enabling other toolsets", () => {
+  const representatives: Record<string, string> = {
+    messages: "discord_send_message",
+    channels: "discord_create_channel",
+    permissions: "discord_set_role_permission",
+    members: "discord_ban_member",
+    roles: "discord_create_role",
+    screening: "discord_update_membership_screening",
+    forums: "discord_create_forum_channel",
+    webhooks: "discord_create_webhook",
+    scheduled_events: "discord_create_scheduled_event",
+    invites: "discord_create_invite",
+    dm: "discord_send_dm",
+  };
+  for (const [toolset, writeTool] of Object.entries(representatives)) {
+    process.env.DISCORD_MCP_TOOLSETS = toolset;
+    const selected = selectModules();
+    assert.equal(selected.length, 1, `${toolset} must select exactly one module`);
+    assert.ok(
+      selected[0].definitions.some((definition) => definition.name === writeTool),
+      `${writeTool} must remain reachable through DISCORD_MCP_TOOLSETS=${toolset}`,
+    );
+    assert.ok(selected[0].handlers.has(writeTool), `${writeTool} must retain a handler`);
+  }
+  delete process.env.DISCORD_MCP_TOOLSETS;
+});
 
 test("selectModules exposes everything when unset or `all`", () => {
   delete process.env.DISCORD_MCP_TOOLSETS;

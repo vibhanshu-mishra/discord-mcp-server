@@ -64,9 +64,20 @@ The configuration form collects:
 - Optional: primary user ID, staff user IDs, resource/office-hour channel IDs,
   history start date, time zone, and toggles for storing content, allowing
   content output, voice collection, and bot-DM collection.
+- **Read-only mode** — defaults to **ON**. When on, Discord write and destructive
+  tools are hidden and blocked. Turn it **OFF** only when you want Claude to send
+  messages or make changes in Discord.
 
-Read-only mode is always on and cannot be disabled through the bundle. Content
-output is off by default.
+With **Read-only mode** off, the extension exposes the supported Discord mutation
+tools. This does not give the bot any extra Discord permissions: Discord continues
+to enforce the permissions and role hierarchy assigned to the bot. Grant only the
+permissions needed for the actions you want; **Administrator** is broad and simple
+but usually not necessary. Content output is off by default.
+
+To return to the analytics-only profile, turn **Read-only mode** back on and
+restart or reload Claude Desktop. The extension starts a new local server for the
+updated configuration; open the connector/tools menu to confirm mutation tools
+are absent.
 
 ## Testing it
 
@@ -75,9 +86,17 @@ Ask Claude, for example:
 - "Sync Discord activity since last Monday."
 - "Generate the most recently completed weekly metrics report."
 - "Show unanswered questions older than 24 hours."
+- With **Read-only mode** off: "Send a message in the announcements channel saying
+  the workshop starts in 10 minutes."
+- With **Read-only mode** off: "Show me what would happen if I run this destructive
+  action before executing it."
 
 The first sync reads Discord history into the local database; subsequent metrics
 questions read from that database.
+
+Destructive tools remain annotated for clients. Bulk delete, channel delete, bulk
+ban, and member pruning preview by default through `dry_run`; other destructive
+actions retain their validation and Discord audit-log reasons.
 
 ## Upgrading it
 
@@ -106,6 +125,8 @@ are redacted by the server's logger.
 ## Troubleshooting missing tools
 
 - Restart Claude Desktop after installing.
+- After changing **Read-only mode**, restart or reload Claude Desktop, then reopen
+  the connector/tools menu. Write tools appear only when it is off.
 - Confirm the required fields (token, server ID, data directory) are filled in.
 - Confirm the data directory is writable and **not** inside the extension folder.
 - Check the extension logs for a startup error.

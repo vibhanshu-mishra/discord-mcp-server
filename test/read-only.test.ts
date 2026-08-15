@@ -5,8 +5,9 @@ import {
   isToolAllowed,
   assertWriteAllowed,
   ReadOnlyModeError,
+  mutatesDiscord,
 } from "../src/readonly.js";
-import { getAllDefinitions, handleTool } from "../src/tools/index.js";
+import { getAllDefinitions, handleTool, selectModules } from "../src/tools/index.js";
 
 /**
  * Tools exposed in read-only mode that are honestly `readOnlyHint: false` because
@@ -19,22 +20,8 @@ const LOCAL_ONLY_WRITERS = new Set(["discord_sync_message_history"]);
 const READ_TOOL = "discord_list_guilds";
 const WRITE_TOOL = "discord_send_message";
 
-/** Write tools spanning the modules the guard must cover. */
-const WRITE_TOOLS = [
-  "discord_send_message", // messages: send
-  "discord_reply_message", // messages: reply
-  "discord_edit_message", // messages: edit
-  "discord_delete_message", // messages: delete
-  "discord_ban_member", // moderation
-  "discord_kick_member", // moderation
-  "discord_add_role", // roles
-  "discord_create_channel", // channels
-  "discord_create_webhook", // webhooks
-  "discord_create_invite", // invites
-  "discord_add_reaction", // reactions
-  "discord_send_dm", // bot DMs
-  "discord_create_scheduled_event", // scheduled events
-];
+const ALL_DEFINITIONS = selectModules().flatMap((module) => module.definitions);
+const WRITE_TOOLS = ALL_DEFINITIONS.filter(mutatesDiscord).map((definition) => definition.name);
 
 afterEach(() => {
   delete process.env.DISCORD_READ_ONLY;
@@ -69,7 +56,7 @@ test("read-only mode exposes read/list tools", () => {
 
 // 3 + 4. DISCORD_READ_ONLY=true hides send/reply/edit/delete/moderation/role/
 // channel/webhook/invite/reaction and other write tools.
-test("read-only mode hides every write tool", () => {
+test("read-only mode hides every Discord write tool", () => {
   process.env.DISCORD_READ_ONLY = "true";
   const names = exposedNames();
   for (const tool of WRITE_TOOLS) {
@@ -88,7 +75,7 @@ test("runtime guard rejects a write tool invoked directly in read-only mode", as
 });
 
 // 6. DISCORD_READ_ONLY=false preserves the original tool registration behaviour.
-test("DISCORD_READ_ONLY=false exposes every tool, including write tools", () => {
+test("DISCORD_READ_ONLY=false exposes every tool, including every Discord write tool", () => {
   process.env.DISCORD_READ_ONLY = "false";
   const names = exposedNames();
   assert.ok(names.has(READ_TOOL), "read tools still present when writes enabled");
@@ -97,6 +84,25 @@ test("DISCORD_READ_ONLY=false exposes every tool, including write tools", () => 
   }
   // The guard does not block writes when read-only mode is off.
   assert.doesNotThrow(() => assertWriteAllowed(WRITE_TOOL));
+});
+
+test("read-only and local-only classifications remain distinct", () => {
+  for (const definition of ALL_DEFINITIONS) {
+    if (definition.annotations?.readOnlyHint === true) {
+      assert.equal(
+        definition.discordWrite,
+        false,
+        `${definition.name} must not be a Discord write`,
+      );
+    }
+  }
+  const localSync = ALL_DEFINITIONS.find(
+    (definition) => definition.name === "discord_sync_message_history",
+  );
+  assert.ok(localSync, "local analytics sync is registered");
+  assert.equal(localSync.discordWrite, false);
+  process.env.DISCORD_READ_ONLY = "true";
+  assert.equal(isToolAllowed(localSync), true, "local analytics writes remain allowed");
 });
 
 // 7. Invalid values safely fall back to read-only mode.

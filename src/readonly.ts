@@ -64,12 +64,11 @@ export function isDestructiveTool(annotations: ToolAnnotations | undefined): boo
 /**
  * THE central source of truth for read-only mode: does this tool mutate Discord?
  *
- * Explicit classification wins — a tool that sets `discordWrite` says so directly
- * (analytics tools set `false` because they only touch the local database). When
- * `discordWrite` is unset (every existing Phase 1 tool), it falls back to the MCP
- * hint: a tool that only reads Discord (`readOnlyHint === true`) does not mutate
- * it. This fallback is fail-closed — a tool that declares neither is treated as a
- * Discord write and therefore blocked, never silently exposed.
+ * Explicit classification wins — registered tools always carry `discordWrite`
+ * because `defineTool` derives it when a module omits it. The fallback protects
+ * manually constructed future definitions: a tool that only reads Discord
+ * (`readOnlyHint === true`) does not mutate it, while missing metadata is treated
+ * as a Discord write and therefore blocked rather than silently exposed.
  */
 export function mutatesDiscord(def: Classifiable): boolean {
   if (def.discordWrite !== undefined) return def.discordWrite;

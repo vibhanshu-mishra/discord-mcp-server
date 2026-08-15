@@ -116,11 +116,15 @@ export function defineTool<S extends z.ZodType>(tool: {
 }): RegisteredTool {
   const { outputSchema } = tool;
   const schema = strictInput(tool.schema);
+  // Persist an explicit classification on every definition. This keeps the
+  // registry auditable: Discord mutations are always `true`, local-only and
+  // read-only operations are `false`, and an omitted annotation fails closed.
+  const discordWrite = tool.discordWrite ?? tool.annotations?.readOnlyHint !== true;
   return {
     name: tool.name,
     description: tool.description,
     annotations: tool.annotations,
-    discordWrite: tool.discordWrite,
+    discordWrite,
     inputSchema: toInputSchema(schema),
     outputSchema: outputSchema ? toOutputSchema(outputSchema) : undefined,
     run: async (args) => {

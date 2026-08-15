@@ -17,12 +17,12 @@ interface Rpc {
 }
 
 /** Starts the stdio server, sends initialize + tools/list, returns parsed replies. */
-function startAndQuery(): Promise<{ init?: Rpc; tools?: Rpc; stderr: string }> {
+function startAndQuery(readOnly: boolean): Promise<{ init?: Rpc; tools?: Rpc; stderr: string }> {
   const dataDir = mkdtempSync(join(tmpdir(), "mcpb-rt-"));
   const env = {
     ...process.env,
     DISCORD_TOKEN: "FAKE.TOKEN.NOT.REAL.1234567890",
-    DISCORD_READ_ONLY: "true",
+    DISCORD_READ_ONLY: String(readOnly),
     DISCORD_ANALYTICS_ENABLED: "true",
     DISCORD_ALLOWED_GUILDS: "111111111111111111",
     DISCORD_ANALYTICS_GUILD_IDS: "111111111111111111",
@@ -78,7 +78,7 @@ function startAndQuery(): Promise<{ init?: Rpc; tools?: Rpc; stderr: string }> {
 
 // 41/42/43/45. Server starts, responds to initialize, and returns tools/list.
 test("bundled server starts over stdio and lists tools", async () => {
-  const { init, tools } = await startAndQuery();
+  const { init, tools } = await startAndQuery(true);
   assert.ok(init?.result, "initialize responded"); // 41/42
   const names = tools?.result?.tools?.map((t) => t.name) ?? [];
   assert.ok(names.length > 0, "tools/list returned tools"); // 43
@@ -88,7 +88,7 @@ test("bundled server starts over stdio and lists tools", async () => {
 
 // 44. Discord write tools remain unavailable in read-only mode.
 test("Discord write tools are unavailable in read-only mode", async () => {
-  const { tools } = await startAndQuery();
+  const { tools } = await startAndQuery(true);
   const names = tools?.result?.tools?.map((t) => t.name) ?? [];
   for (const w of [
     "discord_send_message",
@@ -97,5 +97,20 @@ test("Discord write tools are unavailable in read-only mode", async () => {
     "discord_add_reaction",
   ]) {
     assert.ok(!names.includes(w), `${w} must be hidden in read-only mode`);
+  }
+});
+
+test("Discord write tools are available when the bundle runtime enables writes", async () => {
+  const { init, tools } = await startAndQuery(false);
+  assert.ok(init?.result, "initialize responded");
+  const names = tools?.result?.tools?.map((tool) => tool.name) ?? [];
+  for (const writeTool of [
+    "discord_send_message",
+    "discord_edit_message",
+    "discord_add_reaction",
+    "discord_ban_member",
+    "discord_create_webhook",
+  ]) {
+    assert.ok(names.includes(writeTool), `${writeTool} must be available in write mode`);
   }
 });
