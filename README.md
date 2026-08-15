@@ -31,7 +31,7 @@ Discord MCP Server supports full Discord read/write operations and local analyti
 
 The easiest way to use Discord MCP Server is the one-click desktop extension. You do **not** need to clone this repository, install Node.js, run npm, or edit any JSON.
 
-1. **Download** `Discord-MCP-Server-<version>.mcpb` from the project's GitHub **Releases** page.
+1. **Download** `Discord-MCP-Server-2.2.1.mcpb` from the project's GitHub **Releases** page.
 2. Open **Claude Desktop**.
 3. Go to **Settings → Extensions → Advanced settings**.
 4. Select **Install Extension**.
