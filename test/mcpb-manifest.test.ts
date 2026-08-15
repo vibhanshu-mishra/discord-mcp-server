@@ -62,19 +62,13 @@ test("required config fields are declared correctly", () => {
   assert.equal(cfg.data_directory.type, "directory");
 });
 
-// 12/13/14. Safe defaults and an explicit user-controlled read-only mode.
-test("environment mapping exposes the safe read-only toggle", () => {
-  assert.equal(env.DISCORD_READ_ONLY, "${user_config.read_only_mode}");
-  assert.equal(cfg.read_only_mode.type, "boolean");
-  assert.equal(cfg.read_only_mode.default, true);
+// 12/13/14. The standard bundle enables Discord writes without a user toggle.
+test("environment mapping enables write mode without user configuration", () => {
+  assert.equal(env.DISCORD_READ_ONLY, "false");
+  assert.ok(!("read_only_mode" in cfg), "the standard bundle must not require a read-only toggle");
   assert.equal(env.DISCORD_ANALYTICS_ENABLED, "true"); // 14
   assert.equal(env.DISCORD_MESSAGE_CONTENT, "true"); // 12
   assert.equal(env.DISCORD_GUILD_MEMBERS, "true");
-  assert.equal(cfg.read_only_mode.title, "Read-only mode");
-  assert.equal(
-    cfg.read_only_mode.description,
-    "When enabled, Discord write and destructive tools are hidden and blocked. Disable this only when you want Claude to send messages or make changes in Discord.",
-  );
 });
 
 // 15/16/17. Privacy-preserving user-config defaults.
@@ -117,10 +111,10 @@ test("no real Discord ID appears in the manifest", () => {
   assert.ok(!/\b\d{17,20}\b/.test(JSON.stringify(manifest)));
 });
 
-// The manifest declares no false tools; writes are controlled only by read_only_mode.
-test("manifest does not falsely declare tools or override read-only configuration", () => {
+// The manifest declares no false tools and does not override write mode.
+test("manifest does not falsely declare tools or re-enable read-only mode", () => {
   assert.equal(manifest.tools_generated, true);
   assert.ok(!("tools" in manifest) || Array.isArray(manifest.tools));
-  assert.equal(Object.values(env).filter((value) => value === "true").length > 0, true);
-  assert.equal(env.DISCORD_READ_ONLY, "${user_config.read_only_mode}");
+  assert.equal(env.DISCORD_READ_ONLY, "false");
+  assert.ok(!JSON.stringify(manifest.user_config).includes("read_only_mode"));
 });

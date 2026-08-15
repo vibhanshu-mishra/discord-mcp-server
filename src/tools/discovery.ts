@@ -2,6 +2,7 @@ import { ChannelType, CategoryChannel, GuildChannel } from "discord.js";
 import { z } from "zod";
 import { discord, isGuildAllowed } from "../client.js";
 import { defineTool, defineModule, guildId, structured } from "./define.js";
+import { getCapabilities } from "./capabilities.js";
 
 const guildSummary = z.object({
   id: z.string(),
@@ -16,8 +17,28 @@ const channelSummary = z.object({
   type: z.string(),
 });
 
+const capabilitySummary = z.object({
+  readOnlyMode: z.boolean(),
+  totalLoadedTools: z.number(),
+  discordReadTools: z.number(),
+  discordWriteTools: z.number(),
+  destructiveTools: z.number(),
+  loadedToolsets: z.array(z.string()),
+  guildAllowListConfigured: z.boolean(),
+  analyticsEnabled: z.boolean(),
+});
+
 /** Tool definitions for server/guild discovery and channel navigation. */
 const tools = [
+  defineTool({
+    name: "discord_get_capabilities",
+    description:
+      "Report the currently loaded Discord MCP capabilities: read-only state, tool counts, loaded toolsets, allow-list presence, and analytics state. Never returns tokens, IDs, database paths, or private data.",
+    annotations: { title: "Get capabilities", readOnlyHint: true, openWorldHint: false },
+    schema: z.object({}),
+    outputSchema: capabilitySummary,
+    handle: async () => structured({ ...getCapabilities() }),
+  }),
   defineTool({
     name: "discord_list_guilds",
     description:

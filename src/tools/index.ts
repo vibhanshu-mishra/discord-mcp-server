@@ -9,7 +9,16 @@
  */
 
 import type { ToolModule, ToolDefinition, ToolHandler, ToolResult } from "./types.js";
-import { isReadOnlyMode, isToolAllowed, mutatesDiscord, ReadOnlyModeError } from "../readonly.js";
+import {
+  isDestructiveTool,
+  isReadOnlyMode,
+  isToolAllowed,
+  mutatesDiscord,
+  ReadOnlyModeError,
+} from "../readonly.js";
+import { allowListActive } from "../client.js";
+import { isAnalyticsEnabled } from "../analytics/config.js";
+import { setCapabilityProvider, type CapabilitySummary } from "./capabilities.js";
 
 import discovery from "./discovery.js";
 import messages from "./messages.js";
@@ -100,6 +109,28 @@ const definitionsByName: Map<string, ToolDefinition> = (() => {
   return map;
 })();
 
+/** A secret-free summary of the tool surface currently loaded by this server. */
+function getCapabilities(): CapabilitySummary {
+  const definitions = modules.flatMap((module) => module.definitions);
+  return {
+    readOnlyMode: isReadOnlyMode(),
+    totalLoadedTools: definitions.length,
+    discordReadTools: definitions.filter(
+      (definition) => definition.annotations?.readOnlyHint === true,
+    ).length,
+    discordWriteTools: definitions.filter(mutatesDiscord).length,
+    destructiveTools: definitions.filter((definition) => isDestructiveTool(definition.annotations))
+      .length,
+    loadedToolsets: Object.entries(allToolsets)
+      .filter(([, toolset]) => modules.includes(toolset))
+      .map(([name]) => name),
+    guildAllowListConfigured: allowListActive(),
+    analyticsEnabled: isAnalyticsEnabled(),
+  };
+}
+
+setCapabilityProvider(getCapabilities);
+
 /** Strips internal-only fields (`discordWrite`) so they never reach the client. */
 function toWireDefinition(def: ToolDefinition): ToolDefinition {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -124,6 +155,11 @@ export function getAllDefinitions(): ToolDefinition[] {
 /** True if a tool with this name is registered (regardless of read-only mode). */
 export function hasTool(name: string): boolean {
   return registry.has(name);
+}
+
+/** True when a tool needs a Discord API connection before its handler can run. */
+export function requiresDiscordConnection(name: string): boolean {
+  return definitionsByName.get(name)?.annotations?.openWorldHint === true;
 }
 
 /**

@@ -3,9 +3,9 @@
   "manifest_version": "0.3",
   "name": "discord-mcp-server",
   "display_name": "Discord MCP Server",
-  "version": "2.2.0",
-  "description": "A read-only-by-default Discord MCP server with optional write tools and private local analytics.",
-  "long_description": "Discord MCP Server connects Claude Desktop to a Discord bot for private local analytics and optional Discord management. Read-only mode is enabled by default: Discord mutation tools are hidden and blocked. When a user explicitly disables read-only mode, implemented message, channel, member, role, moderation, webhook, invite, forum, event, and DM tools become available, subject to the bot's Discord permissions and configured guild allow-list. Local analytics writes remain separate from Discord writes. Message content output is disabled by default. The server calls no external AI provider; the connected client performs any interpretation.",
+  "version": "2.2.1",
+  "description": "A Discord read/write MCP server with private local analytics.",
+  "long_description": "Discord MCP Server connects Claude Desktop to a Discord bot for full supported Discord management and private local analytics. The packaged extension enables registered message, channel, member, role, moderation, webhook, invite, forum, event, and DM tools by default, subject to the bot's Discord permissions and configured guild allow-list. Local analytics writes remain separate from Discord writes. An optional source-level read-only mode remains available for restricted deployments. Message content output is disabled by default. The server calls no external AI provider; the connected client performs any interpretation.",
   "author": {
     "name": "Discord MCP Server Contributors"
   },
@@ -21,7 +21,7 @@
         "DISCORD_TOKEN": "${user_config.discord_token}",
         "DISCORD_ALLOWED_GUILDS": "${user_config.guild_id}",
         "DISCORD_ANALYTICS_GUILD_IDS": "${user_config.guild_id}",
-        "DISCORD_READ_ONLY": "${user_config.read_only_mode}",
+        "DISCORD_READ_ONLY": "false",
         "DISCORD_ANALYTICS_ENABLED": "true",
         "DISCORD_MESSAGE_CONTENT": "true",
         "DISCORD_GUILD_MEMBERS": "true",
@@ -52,13 +52,6 @@
     }
   },
   "user_config": {
-    "read_only_mode": {
-      "type": "boolean",
-      "title": "Read-only mode",
-      "description": "When enabled, Discord write and destructive tools are hidden and blocked. Disable this only when you want Claude to send messages or make changes in Discord.",
-      "required": false,
-      "default": true
-    },
     "discord_token": {
       "type": "string",
       "title": "Discord bot token",

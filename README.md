@@ -2,7 +2,7 @@
 
 # Discord MCP Server
 
-**A read-only-by-default Discord MCP server with private local analytics and explicitly enabled write tools — installable as a one-click Claude Desktop extension.**
+**A Discord read/write MCP server with private local analytics — installable as a one-click Claude Desktop extension.**
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-green)](https://nodejs.org)
@@ -15,10 +15,10 @@
 
 ## Project overview
 
-Discord MCP Server connects an MCP client (such as Claude Desktop) to a Discord bot for **structured, auditable analytics** and, when deliberately enabled, supported Discord management actions.
+Discord MCP Server supports full Discord read/write operations and local analytics. The packaged Claude Desktop extension enables the registered Discord tools by default, while an optional source-level read-only mode remains available for restricted deployments.
 
-- **Read-only by default.** Discord write tools are hidden and blocked until `DISCORD_READ_ONLY=false`. The desktop extension exposes this as a safe, default-on **Read-only mode** switch.
-- **Full supported Discord capability when enabled.** Messages, threads, channels, roles, member moderation, permissions, webhooks, invites, scheduled events, forums, and bot DMs use the existing Discord APIs and remain subject to Discord permissions.
+- **Write-enabled desktop extension.** The packaged extension starts with `DISCORD_READ_ONLY=false`; messages, threads, channels, roles, member moderation, permissions, webhooks, invites, scheduled events, forums, bot DMs, and analytics tools are available immediately.
+- **Optional source-level read-only mode.** Developers and restricted deployments can still set `DISCORD_READ_ONLY=true`, which hides and blocks Discord mutations while allowing local analytics operations.
 - **Private local SQLite analytics.** Messages, reactions, threads, and voice sessions are stored in a database on your own machine.
 - **Deterministic metrics.** Member engagement, per-user activity, staff response health, unanswered/unacknowledged candidates, training cadence, office-hour attendance, and weekly reports are all reproducible, no black box.
 - **Privacy-controlled qualitative analysis.** Lexical topic candidates, recurring-question groups, feedback signals, conversation context, and evidence packets. Message content output is **off by default**, and the server calls **no external AI provider**, your MCP client does any interpretation.
@@ -40,7 +40,6 @@ The easiest way to use Discord MCP Server is the one-click desktop extension. Yo
    - **Discord bot token** (from the Discord Developer Portal).
    - **Discord server (guild) ID** (enable Developer Mode in Discord → right-click the server → _Copy Server ID_).
    - **Local data directory** (a private folder outside the extension; a per-user default is suggested).
-   - **Read-only mode** — leave **ON** for analytics-only use; turn it **OFF** only when you want Discord message or management tools to be available.
    - Optional: primary user ID, staff user IDs, resource/office-hour channel IDs, history start date, time zone, and privacy toggles.
 7. If the tools do not appear, **restart Claude Desktop**.
 8. Open the **connector/tools** menu to confirm the Discord tools are listed.
@@ -82,13 +81,13 @@ Claude Desktop starts the local server automatically when a conversation needs i
 - **Conversation context** — bounded local context around a message (before/after, replies, thread).
 - **Privacy-safe evidence packets** — deterministic evidence for a client to summarise (the server never writes prose).
 - **Backups, exports, and pruning** — via the operations CLI.
-- **Optional Discord writes** — send, reply to, edit, delete, pin, crosspost, forward, and react to messages; manage threads, channels, roles, member permissions and moderation; manage webhooks, invites, scheduled events, forums, and supported bot DMs. These tools appear only with read-only mode off.
+- **Discord writes by default in the packaged extension** — send, reply to, edit, delete, pin, crosspost, forward, and react to messages; manage threads, channels, roles, member permissions and moderation; manage webhooks, invites, scheduled events, forums, and supported bot DMs.
 
 ---
 
 ## Safety and privacy
 
-- **Discord write tools are hidden and blocked by default.** `DISCORD_READ_ONLY` defaults to `true`; missing or invalid values also remain read-only. Set it to `false` (or switch **Read-only mode** off in the desktop extension) to expose the supported write tools.
+- **The packaged extension enables Discord writes by default.** Its fixed `DISCORD_READ_ONLY=false` setting exposes all registered write tools without an extra configuration step. Source-level deployments still default to read-only when the variable is missing or invalid and can deliberately set it to `true`.
 - **MCP permission does not override Discord permission.** Write mode only permits the MCP server to attempt an action. Discord still enforces the bot's channel, role, and server permissions, and Discord permission errors are returned to the caller.
 - **Destructive operations retain safeguards.** Every destructive tool is annotated as destructive. Bulk delete, channel delete, bulk ban, and member pruning use dry-run-by-default previews; other destructive operations keep their existing validation and Discord audit-log reasons.
 - **Personal user-to-user Discord DMs cannot be accessed.** The bot is not a user; it can only see server content it has permission to read and DMs sent directly to it.
@@ -144,11 +143,13 @@ docker run --rm -i -e DISCORD_TOKEN=your_bot_token_here -v discord-analytics-dat
 4. **OAuth2 → URL Generator**: scope `bot`, then select only the permissions required by the profile below.
 5. Invite the bot to your server with the generated URL.
 
-### Discord permission profiles
+### Discord permission requirements
 
-**Read-only analytics profile.** For analytics-focused installations, grant only the permissions needed for the chosen features: **View Channels**, **Read Message History**, and access to the relevant channel content; add **Connect** for prospective voice attendance. Enable the Server Members and Message Content gateway intents when the selected analytics need them. No Discord write permission is needed while read-only mode remains on.
+Exposing an MCP tool does not grant the bot Discord permission or modify the server. For normal posting, grant the bot the relevant channel permissions: **View Channel**, **Send Messages**, **Read Message History**, **Add Reactions**, **Embed Links**, **Attach Files**, and **Send Messages in Threads** where needed.
 
-**Full-management profile.** When you deliberately turn MCP read-only mode off, grant the corresponding Discord permissions for the tools you intend to use—for example **Send Messages**, **Manage Messages**, **Create Public Threads**, **Manage Channels**, **Manage Roles**, **Moderate Members**, **Kick Members**, **Ban Members**, **Manage Webhooks**, **Create Instant Invite**, and scheduled-event permissions. **Administrator** is the simplest way to expose every supported management feature, but gives the bot extremely broad access; prefer least privilege where practical. MCP read-only mode OFF does not bypass Discord: a bot without permission to ban members will receive Discord's permission error from the ban tool.
+Forum posts use `discord_create_forum_post` and require **View Channel**, **Send Messages**, and **Create Public Threads**. Replies inside forum posts require **Send Messages in Threads** (shown as “Send Messages in Posts” in the forum interface). Scheduled-event tools use Discord’s event permissions: grant **Create Events** to create events and **Manage Events** to edit, cancel, or delete them; server configuration and role hierarchy can impose further limits.
+
+Management tools require their matching permissions, including **Manage Channels**, **Manage Roles**, **Manage Messages**, **Manage Webhooks**, **Kick Members**, and **Ban Members**. **Administrator** is the simplest test configuration because it bypasses channel permission overwrites, but it grants extremely broad server access; prefer least privilege in normal use. Discord permission errors are returned by the tool and are never silently bypassed.
 
 ---
 
@@ -158,17 +159,16 @@ docker run --rm -i -e DISCORD_TOKEN=your_bot_token_here -v discord-analytics-dat
 
 The desktop extension collects friendly fields and maps them to environment variables. Safe defaults are applied by the bundle:
 
-| Fixed by the bundle                                 | Value                                            |
-| --------------------------------------------------- | ------------------------------------------------ |
-| `DISCORD_READ_ONLY`                                 | `${user_config.read_only_mode}` (default `true`) |
-| `DISCORD_ANALYTICS_ENABLED`                         | `true`                                           |
-| `DISCORD_MESSAGE_CONTENT` / `DISCORD_GUILD_MEMBERS` | `true`                                           |
+| Fixed by the bundle                                 | Value   |
+| --------------------------------------------------- | ------- |
+| `DISCORD_READ_ONLY`                                 | `false` |
+| `DISCORD_ANALYTICS_ENABLED`                         | `true`  |
+| `DISCORD_MESSAGE_CONTENT` / `DISCORD_GUILD_MEMBERS` | `true`  |
 
 | Form field                                                             | Environment variable(s)                                                                                                                                                                                                                    |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Discord bot token (required, sensitive)                                | `DISCORD_TOKEN`                                                                                                                                                                                                                            |
 | Discord server (guild) ID (required)                                   | `DISCORD_ALLOWED_GUILDS` **and** `DISCORD_ANALYTICS_GUILD_IDS`                                                                                                                                                                             |
-| Read-only mode                                                         | `DISCORD_READ_ONLY`                                                                                                                                                                                                                        |
 | Local data directory (required)                                        | `DISCORD_ANALYTICS_DB_PATH`, `DISCORD_ANALYTICS_LOCK_PATH`, `DISCORD_ANALYTICS_BACKUP_DIR`, `DISCORD_ANALYTICS_EXPORT_DIR` (derived as `<dir>/discord-analytics.sqlite`, `<dir>/discord-analytics.lock`, `<dir>/backups`, `<dir>/exports`) |
 | Store message content                                                  | `DISCORD_ANALYTICS_STORE_MESSAGE_CONTENT`                                                                                                                                                                                                  |
 | Allow content output                                                   | `DISCORD_ANALYTICS_ALLOW_CONTENT_OUTPUT`                                                                                                                                                                                                   |
@@ -247,7 +247,7 @@ The project was built in phases, all complete and covered by automated tests:
 4. Privacy-controlled qualitative analysis: topics, recurring questions, feedback signals, conversation context, and evidence packets with no external AI provider.
 5. Operations CLI: doctor, database checks, process locks, backups, exports, pruning, and Docker readiness.
 6. Claude Desktop MCP bundle packaging.
-7. Configurable full Discord write capability with read-only mode remaining the safe default.
+7. Packaged Discord writes enabled by default, with source-level read-only mode retained for restricted deployments.
 
 ---
 

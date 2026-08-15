@@ -8,7 +8,12 @@ import {
 
 import { ensureConnected } from "./client.js";
 import { formatToolError } from "./errors.js";
-import { getAllDefinitions, handleTool, hasTool } from "./tools/index.js";
+import {
+  getAllDefinitions,
+  handleTool,
+  hasTool,
+  requiresDiscordConnection,
+} from "./tools/index.js";
 
 /**
  * Builds the MCP server with the tool list/call handlers wired in, leaving the
@@ -28,7 +33,7 @@ export function createServer(version: string): Server {
     if (!hasTool(name)) throw new McpError(ErrorCode.InvalidParams, `Unknown tool: ${name}`);
 
     try {
-      await ensureConnected();
+      if (requiresDiscordConnection(name)) await ensureConnected();
       return await handleTool(name, args);
     } catch (err: unknown) {
       return {

@@ -32,7 +32,7 @@ test("tools/list serves every definition and rejects unexpected cursors", async 
   try {
     const client = await connectedClient();
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 116, "update this pin when adding/removing tools");
+    assert.equal(tools.length, 117, "update this pin when adding/removing tools");
     await assert.rejects(
       () => client.listTools({ cursor: "bogus" }),
       (err: unknown) => err instanceof McpError && err.code === ErrorCode.InvalidParams,
@@ -57,6 +57,24 @@ test("a handler failure surfaces as an isError result, not a protocol error", as
   })) as { isError?: boolean; content: { text?: string }[] };
   assert.equal(res.isError, true);
   assert.match(res.content[0].text ?? "", /login refused \(test\)|DISCORD_TOKEN/);
+  await client.close();
+  mock.restoreAll();
+});
+
+test("capabilities diagnostic does not require a Discord connection", async () => {
+  const { discord } = await import("../src/client.js");
+  const { mock } = await import("node:test");
+  mock.method(discord, "isReady", () => false as never);
+  mock.method(discord, "login", async () => {
+    throw new Error("connection must not be attempted");
+  });
+  const client = await connectedClient();
+  const result = (await client.callTool({
+    name: "discord_get_capabilities",
+    arguments: {},
+  })) as { isError?: boolean; structuredContent?: Record<string, unknown> };
+  assert.notEqual(result.isError, true);
+  assert.equal(result.structuredContent?.discordWriteTools, 65);
   await client.close();
   mock.restoreAll();
 });
