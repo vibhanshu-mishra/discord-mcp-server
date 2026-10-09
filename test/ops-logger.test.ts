@@ -17,7 +17,13 @@ test("redact removes token, home directory, and URL query strings", () => {
   assert.ok(!out.includes("SECRET.BOT.TOKEN.1234567890"), "token removed");
   assert.ok(!out.includes(home), "home directory collapsed");
   assert.ok(!out.includes("SIGNED"), "signed URL query removed");
-  assert.ok(out.includes("https://cdn.example.com/a/b"), "URL origin/path preserved");
+
+  const linkPart = out.split("link=")[1]?.split(/\s+/)[0];
+  assert.ok(linkPart, "redacted output contains link");
+  const parsed = new URL(linkPart!);
+  assert.equal(parsed.origin, "https://cdn.example.com", "URL origin preserved");
+  assert.equal(parsed.pathname, "/a/b", "URL path preserved");
+  assert.equal(parsed.search, "", "URL query removed");
 });
 
 // Logger respects the configured level and routes through redaction.
