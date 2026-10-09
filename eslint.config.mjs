@@ -1,32 +1,11 @@
-import js from "@eslint/js";
-import tseslint from "typescript-eslint";
-import prettier from "eslint-config-prettier";
+// Place this file next to the JavaScript/TypeScript project's package.json.
+// If an ESLint config already exists, update it rather than overwriting it.
+import js from '@eslint/js';
+import { defineConfig } from 'eslint/config';
+import tseslint from 'typescript-eslint';
 
-export default tseslint.config(
-  { ignores: ["dist/", "node_modules/", "live-test*.mjs", ".mcpb-build/", "artifacts/"] },
-  js.configs.recommended,
-  ...tseslint.configs.recommended,
-  prettier,
-  {
-    rules: {
-      "@typescript-eslint/no-explicit-any": "warn",
-      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
-    },
-  },
-  {
-    files: ["scripts/**/*.{js,mjs}"],
-    languageOptions: {
-      globals: {
-        require: "readonly",
-        module: "readonly",
-        __dirname: "readonly",
-        console: "readonly",
-        process: "readonly",
-        URL: "readonly",
-      },
-    },
-    rules: {
-      "@typescript-eslint/no-require-imports": "off",
-    },
-  },
-);
+export default defineConfig({
+  ignores: ['**/dist/**', '**/build/**', '**/coverage/**'],
+  files: ['**/*.{js,cjs,mjs,jsx,ts,cts,mts,tsx}'],
+  extends: [js.configs.recommended, tseslint.configs.recommended],
+});
